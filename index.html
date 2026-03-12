@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>My Hub — 할 일 & 뉴스 허브</title>
+  <title>DK Hub — TO DO & News Hub</title>
   <meta name="theme-color" content="#FFFFFF" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
@@ -212,9 +212,9 @@ function App() {
   const toggleSideExp=(id)=>setSideExpanded((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);
 
   const navItems=[
-    {id:"tasks",icon:"☑",label:"할 일",count:data.tasks.filter((t)=>!t.done).length},
-    {id:"news",icon:"◆",label:"뉴스",count:data.news.filter((n)=>!n.read).length},
-    {id:"reminders",icon:"⏰",label:"리마인더",count:reminders,hot:true},
+    {id:"tasks",label:"TO DO",count:data.tasks.filter((t)=>!t.done).length},
+    {id:"news",label:"News Hub",count:data.news.filter((n)=>!n.read).length},
+    {id:"reminders",label:"리마인더",count:reminders,hot:true,divider:true},
   ];
   const selectedMainCat=data.newsCats.find((c)=>c.id===newsMainFilter);
   const newsFilterLabel=newsSubFilter?(()=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===newsSubFilter));return`${p?.name} › ${p?.subs.find((s)=>s.id===newsSubFilter)?.name}`;})():newsMainFilter!=="all"?selectedMainCat?.name:null;
@@ -233,18 +233,19 @@ function App() {
         @keyframes spin{to{transform:rotate(360deg)}}
         .row-h:hover{background:#FAFAFA}
         .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
-        @media(max-width:767px){.desk{display:none!important}.main-ml{margin-left:0!important}.ngrid{grid-template-columns:1fr!important}}
+        @media(max-width:767px){.desk{display:none!important}.main-ml{margin-left:0!important}.ngrid{grid-template-columns:1fr!important}.row-h div{font-size:inherit}.main-ml h1{font-size:24px!important}.main-ml h3{font-size:15px!important}.main-ml p,.main-ml span,.main-ml div{font-size:inherit}}
         @media(min-width:768px){.mob{display:none!important}}
+        @media(max-width:767px){.mob-scale{font-size:15px!important}.mob-scale-sm{font-size:13px!important}}
       `}</style>
 
       <div style={{display:"flex",minHeight:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#37352F"}}>
 
         {/* DESKTOP SIDEBAR */}
         <aside className="desk" style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"#FBFBFA",borderRight:"1px solid #EFEFEF",padding:"20px 10px",overflowY:"auto",zIndex:40,display:"flex",flexDirection:"column"}}>
-          <div style={{fontSize:14,fontWeight:700,padding:"4px 8px",marginBottom:4,display:"flex",alignItems:"center",gap:6}}><span>⚡</span> My Hub</div>
+          <div style={{fontSize:14,fontWeight:700,padding:"4px 8px",marginBottom:4,display:"flex",alignItems:"center",gap:6}}><span>⚡</span> DK Hub</div>
           <div style={{padding:"0 8px 12px"}}><SyncBadge status={syncStatus} /></div>
 
-          {navItems.map((n)=>(<button key={n.id} onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{...navBtn,background:view===n.id?"#EFEFEF":"transparent",color:view===n.id?"#37352F":"#9B9A97",fontWeight:view===n.id?600:400}}><span style={{fontSize:14}}>{n.icon}</span><span style={{flex:1}}>{n.label}</span>{n.count>0&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:n.hot?"#FEE2E2":"#F0F0EE",color:n.hot?"#DC2626":"#B4B4B0",fontWeight:600}}>{n.count}</span>}</button>))}
+          {navItems.map((n)=>(<React.Fragment key={n.id}>{n.divider&&<div style={{borderTop:"1px solid #EFEFEF",margin:"8px 8px"}} />}<button onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{...navBtn,fontSize:16,background:view===n.id?"#EFEFEF":"transparent",color:view===n.id?"#37352F":"#9B9A97",fontWeight:view===n.id?600:400}}><span style={{flex:1}}>{n.label}</span>{n.count>0&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:n.hot?"#FEE2E2":"#F0F0EE",color:n.hot?"#DC2626":"#B4B4B0",fontWeight:600}}>{n.count}</span>}</button></React.Fragment>))}
 
           {(view==="tasks"||view==="news")&&(
             <div style={{marginTop:18,padding:"0 8px"}}>
@@ -289,14 +290,14 @@ function App() {
               {catEdit===catType&&<button onClick={()=>addCat(catType)} style={{...linkBtn,fontSize:11,marginTop:4,color:"#B4B4B0"}}>+ 카테고리 추가</button>}
             </div>
           )}
-          <div style={{marginTop:"auto",padding:"12px 8px",borderTop:"1px solid #EFEFEF"}}><div style={{fontSize:10,color:"#B4B4B0",lineHeight:1.6}}>할 일 {data.tasks.length} · 뉴스 {data.news.length}<br/>Firebase 실시간 동기화</div></div>
+          <div style={{marginTop:"auto",padding:"12px 8px",borderTop:"1px solid #EFEFEF"}}><div style={{fontSize:10,color:"#B4B4B0",lineHeight:1.6}}>할 일 {data.tasks.length} · 뉴스 {data.news.length}<br/>Firebase 동기화</div></div>
         </aside>
 
         {/* MAIN */}
         <main className="main-ml" style={{flex:1,marginLeft:220,minHeight:"100vh",paddingBottom:80}}>
           <div style={{position:"sticky",top:0,zIndex:30,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F0F0EE",padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
             <div style={{position:"relative",flex:"0 1 300px"}}><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="검색..." style={{...inputSt,paddingLeft:30,width:"100%"}} /><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"#B4B4B0"}}>⌕</span></div>
-            <button className="mob" onClick={()=>setFilterOpen(!filterOpen)} style={{background:filterOpen?"#37352F":"#F7F6F3",border:"none",borderRadius:6,padding:"7px 10px",fontSize:12,cursor:"pointer",color:filterOpen?"#fff":"#6B6B6B",fontWeight:500,fontFamily:"inherit"}}>{filterOpen?"✕ 닫기":"≡ 필터"}</button>
+            <button className="mob" onClick={()=>setFilterOpen(!filterOpen)} style={{background:filterOpen?"#37352F":"#F7F6F3",border:"none",borderRadius:6,padding:"7px 10px",fontSize:12,cursor:"pointer",color:filterOpen?"#fff":"#6B6B6B",fontWeight:500,fontFamily:"inherit"}}>{filterOpen?"✕ 닫기":"필터"}</button>
             <div style={{flex:1}} />
             <span className="mob"><SyncBadge status={syncStatus} /></span>
             {reminders>0&&view!=="reminders"&&<button className="desk" onClick={()=>setView("reminders")} style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:"#DC2626",cursor:"pointer",fontFamily:"inherit"}}>⏰ {reminders}</button>}
@@ -331,11 +332,11 @@ function App() {
           <div style={{padding:"20px 20px"}}>
             {/* TASKS */}
             {view==="tasks"&&(<section style={{animation:"fadeUp 0.3s"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>할 일</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div><button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>TO DO</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div><button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button></div>
               <div style={{display:"flex",gap:12,marginBottom:12,borderBottom:"1px solid #EFEFEF",paddingBottom:6}}>{["active","done"].map((t)=>(<button key={t} onClick={()=>setTaskTab(t)} style={{...tabBtn,color:taskTab===t?"#37352F":"#B4B4B0",fontWeight:taskTab===t?600:400,borderBottom:taskTab===t?"2px solid #37352F":"2px solid transparent"}}>{t==="active"?"진행 중":"완료"}</button>))}</div>
               {filteredTasks.length===0?<Empty icon="📝" msg={taskTab==="active"?"할 일을 추가해보세요":"완료된 항목 없음"} />:
                 filteredTasks.map((t,i)=>{const cat=data.taskCats.find((c)=>c.id===t.category);const stale=!t.done&&daysAgo(t.lastChecked||t.createdAt)>=STALE;return(
-                  <div key={t.id} className="row-h" style={{padding:"10px 4px",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"flex-start",gap:10,background:stale?"#FFFBFA":"transparent",borderLeft:stale?"3px solid #EB5757":"3px solid transparent",paddingLeft:stale?10:4,animation:`fadeUp 0.25s ease ${i*0.02}s both`}}>
+                  <div key={t.id} className="row-h" style={{padding:"10px 4px",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"flex-start",gap:10,background:stale?"#FFFBFA":"transparent",borderLeft:stale?"3px solid #EB5757":"3px solid transparent",paddingLeft:stale?10:4,animation:`fadeUp 0.25s ease ${i*0.02}s both`,maxWidth:800}}>
                     <button onClick={()=>updTask(t.id,{done:!t.done,lastChecked:Date.now()})} style={{width:18,height:18,borderRadius:3,flexShrink:0,marginTop:1,border:`1.5px solid ${t.done?(cat?.color||"#37352F"):"#D3D1CB"}`,background:t.done?(cat?.color||"#37352F"):"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{t.done&&<span style={{color:"#fff",fontSize:10,fontWeight:800}}>✓</span>}</button>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13.5,fontWeight:500,color:t.done?"#B4B4B0":"#37352F",textDecoration:t.done?"line-through":"none"}}>{t.title}</div>
@@ -360,11 +361,11 @@ function App() {
 
             {/* NEWS */}
             {view==="news"&&(<section style={{animation:"fadeUp 0.3s"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>뉴스 허브</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>{filteredNews.length}개{newsFilterLabel?` · ${newsFilterLabel}`:""}</p></div><button onClick={()=>openModal("news")} style={primaryBtn}>+ 추가</button></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>News Hub</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>{filteredNews.length}개{newsFilterLabel?` · ${newsFilterLabel}`:""}</p></div><button onClick={()=>openModal("news")} style={primaryBtn}>+ 추가</button></div>
               {filteredNews.length===0?<Empty icon="📰" msg="뉴스를 추가해보세요" />:(
                 <div className="ngrid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
                   {filteredNews.map((n,i)=>{const stale=!n.read&&daysAgo(n.lastChecked||n.createdAt)>=STALE;return(
-                    <div key={n.id} className="card-h" style={{border:`1px solid ${stale?"#FECACA":"#EFEFEF"}`,borderRadius:8,overflow:"hidden",opacity:n.read?0.55:1,animation:`fadeUp 0.3s ease ${i*0.03}s both`}}>
+                    <div key={n.id} className="card-h" style={{border:`1.5px solid ${stale?"#FECACA":"#D5D3CE"}`,borderRadius:8,overflow:"hidden",opacity:n.read?0.55:1,animation:`fadeUp 0.3s ease ${i*0.03}s both`}}>
                       {n.thumbnail?(<div style={{height:140,overflow:"hidden",background:"#F7F6F3"}}><img src={n.thumbnail} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} /></div>):(<div style={{height:36,background:"#FBFBFA",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:"#B4B4B0",letterSpacing:1}}>{n.source||detectSource(n.url)}</span></div>)}
                       <div style={{padding:"12px 14px"}}>
                         <div style={{display:"flex",alignItems:"start",gap:6}}><h3 style={{flex:1,fontSize:13.5,fontWeight:600,lineHeight:1.4}}>{n.title}</h3>{stale&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FEE2E2",color:"#EB5757",flexShrink:0}}>{daysAgo(n.lastChecked||n.createdAt)}일</span>}</div>
@@ -375,7 +376,7 @@ function App() {
                         </div>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:"1px solid #F7F6F3"}}>
                           <span style={{fontSize:10,color:"#B4B4B0"}}>{n.source||detectSource(n.url)} · {fmtDate(n.createdAt)}</span>
-                          <div style={{display:"flex",gap:6}}>
+                          <div style={{display:"flex",gap:12}}>
                             {n.url&&<a href={n.url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#2F80ED",textDecoration:"none",fontWeight:500}}>열기↗</a>}
                             <button onClick={()=>updNews(n.id,{read:!n.read,lastChecked:Date.now()})} style={tinyBtn}>{n.read?"✓읽음":"읽기"}</button>
                             <button onClick={()=>openModal("news-edit",n)} style={tinyBtn}>✎</button>
@@ -404,8 +405,8 @@ function App() {
         </main>
 
         {/* MOBILE BOTTOM TAB */}
-        <nav className="mob" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:40,background:"#fff",borderTop:"1px solid #EFEFEF",display:"flex",padding:"6px 0 10px",paddingBottom:"max(10px, env(safe-area-inset-bottom))"}}>
-          {navItems.map((n)=>(<button key={n.id} onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,position:"relative",fontFamily:"inherit"}}><span style={{fontSize:18,color:view===n.id?"#37352F":"#B4B4B0"}}>{n.icon}</span><span style={{fontSize:10,color:view===n.id?"#37352F":"#B4B4B0",fontWeight:view===n.id?600:400}}>{n.label}</span>{n.hot&&n.count>0&&<span style={{position:"absolute",top:-2,right:"25%",minWidth:16,height:16,borderRadius:8,background:"#DC2626",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{n.count}</span>}</button>))}
+        <nav className="mob" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:40,background:"#fff",borderTop:"1px solid #EFEFEF",display:"flex",padding:"8px 0 10px",paddingBottom:"max(10px, env(safe-area-inset-bottom))"}}>
+          {navItems.map((n)=>(<button key={n.id} onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,position:"relative",fontFamily:"inherit"}}><span style={{fontSize:13,fontWeight:view===n.id?700:500,color:view===n.id?"#37352F":"#B4B4B0"}}>{n.label}</span>{n.hot&&n.count>0&&<span style={{position:"absolute",top:-4,right:"20%",minWidth:16,height:16,borderRadius:8,background:"#DC2626",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{n.count}</span>}</button>))}
         </nav>
 
         {/* MODALS */}
@@ -435,7 +436,7 @@ const catBtn={flex:1,background:"none",border:"none",cursor:"pointer",display:"f
 const arrowBtn={background:"none",border:"none",cursor:"pointer",width:14,height:14,padding:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,transition:"transform 0.2s"};
 const linkBtn={background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"};
 const editInput={flex:1,border:"none",borderBottom:"1px solid #EFEFEF",background:"transparent",fontSize:12,color:"#37352F",outline:"none",padding:"1px 2px",fontFamily:"inherit"};
-const primaryBtn={padding:"7px 16px",borderRadius:6,border:"none",cursor:"pointer",background:"#37352F",color:"#fff",fontSize:12.5,fontWeight:600,fontFamily:"inherit"};
+const primaryBtn={padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:"#56B4E8",color:"#fff",fontSize:11.5,fontWeight:600,fontFamily:"inherit"};
 const inputSt={padding:"8px 12px",borderRadius:6,border:"1px solid #EFEFEF",background:"#F7F6F3",fontSize:13,color:"#37352F",outline:"none",fontFamily:"inherit"};
 const tinyBtn={background:"none",border:"none",fontSize:11,color:"#9B9A97",cursor:"pointer",fontFamily:"inherit"};
 const tabBtn={background:"none",border:"none",cursor:"pointer",fontSize:12.5,paddingBottom:4,fontFamily:"inherit"};
