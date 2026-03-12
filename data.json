@@ -1,0 +1,159 @@
+{
+  "tasks": [
+    {
+      "title": "동서대 화상 미팅 준비",
+      "desc": "미팅할 내용 정리 필요.\n대학원생 활용 : scd ai 이미지 샷 , 로라학습, 모델테스트",
+      "category": "plan",
+      "priority": "high",
+      "dueDate": 1773792000000,
+      "id": "1773325040785-nofyhvq",
+      "createdAt": 1773325040785,
+      "done": false,
+      "lastChecked": null
+    }
+  ],
+  "news": [],
+  "taskCats": [
+    {
+      "id": "personal",
+      "name": "개인",
+      "color": "#EB5757",
+      "subs": []
+    },
+    {
+      "id": "work",
+      "name": "회사",
+      "color": "#2F80ED",
+      "subs": []
+    },
+    {
+      "id": "team",
+      "name": "팀 지시",
+      "color": "#9B51E0",
+      "subs": []
+    },
+    {
+      "id": "plan",
+      "name": "계획",
+      "color": "#27AE60",
+      "subs": []
+    }
+  ],
+  "newsCats": [
+    {
+      "id": "comfyui",
+      "name": "ComfyUI",
+      "color": "#27AE60",
+      "subs": [
+        {
+          "id": "nodes",
+          "name": "Custom Nodes"
+        },
+        {
+          "id": "workflow",
+          "name": "워크플로우"
+        },
+        {
+          "id": "model_c",
+          "name": "모델"
+        },
+        {
+          "id": "lora_c",
+          "name": "LoRA"
+        }
+      ]
+    },
+    {
+      "id": "nuke",
+      "name": "Nuke",
+      "color": "#2F80ED",
+      "subs": [
+        {
+          "id": "copycat",
+          "name": "Copycat/ML"
+        },
+        {
+          "id": "nuke_bridge",
+          "name": "Bridge"
+        },
+        {
+          "id": "nuke_script",
+          "name": "스크립트"
+        }
+      ]
+    },
+    {
+      "id": "tracking",
+      "name": "Tracking",
+      "color": "#F2994A",
+      "subs": [
+        {
+          "id": "point_t",
+          "name": "Point"
+        },
+        {
+          "id": "plane_t",
+          "name": "Plane"
+        },
+        {
+          "id": "3d_t",
+          "name": "3D"
+        }
+      ]
+    },
+    {
+      "id": "roto",
+      "name": "Roto/Matte",
+      "color": "#EB5757",
+      "subs": [
+        {
+          "id": "auto_roto",
+          "name": "Auto Roto"
+        },
+        {
+          "id": "matte_ex",
+          "name": "Matte 추출"
+        }
+      ]
+    },
+    {
+      "id": "inpaint",
+      "name": "Inpaint",
+      "color": "#9B51E0",
+      "subs": []
+    },
+    {
+      "id": "deepface",
+      "name": "DeepFaceLab",
+      "color": "#BB6BD9",
+      "subs": [
+        {
+          "id": "faceswap",
+          "name": "Face Swap"
+        },
+        {
+          "id": "lipsync",
+          "name": "Lip Sync"
+        }
+      ]
+    },
+    {
+      "id": "upscale",
+      "name": "Upscale",
+      "color": "#6FCF97",
+      "subs": []
+    },
+    {
+      "id": "tutorial",
+      "name": "Tutorial",
+      "color": "#4ECDC4",
+      "subs": []
+    },
+    {
+      "id": "etc",
+      "name": "기타",
+      "color": "#828282",
+      "subs": []
+    }
+  ]
+}
