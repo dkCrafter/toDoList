@@ -1,13 +1,13 @@
 {
   "tasks": [
     {
-      "title": "동서대 화상 미팅 준비",
-      "desc": "미팅할 내용 정리 필요.\n대학원생 활용 : scd ai 이미지 샷 , 로라학습, 모델테스트",
+      "title": "동서대 미팅 준비",
+      "desc": "대학원생 활용 방안 : scd ai 영상 발주, lora 학습, 모델 테스트",
       "category": "plan",
       "priority": "high",
       "dueDate": 1773792000000,
-      "id": "1773325040785-nofyhvq",
-      "createdAt": 1773325040785,
+      "id": "1773325485849-qobr39c",
+      "createdAt": 1773325485849,
       "done": false,
       "lastChecked": null
     }
