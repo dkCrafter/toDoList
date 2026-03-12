@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>My Hub — 할 일 & 뉴스 허브</title>
+  <meta name="description" content="개인 할 일 관리, AI 뉴스 스크랩, 리마인더를 하나로" />
+  <meta name="theme-color" content="#FFFFFF" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#fff;font-family:'Noto Sans KR',-apple-system,sans-serif;overflow-x:hidden}
+    #root{min-height:100vh}
+  </style>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+/* ═══════════════════════════════════════════
+   GITHUB STORAGE LAYER
+   ═══════════════════════════════════════════ */
+const GH_CONFIG_KEY = "myhub-gh-config";
+const LOCAL_CACHE = "myhub-v4";
+const DATA_PATH = "data.json";
+
+const getGhConfig = () => { try { return JSON.parse(localStorage.getItem(GH_CONFIG_KEY)); } catch { return null; } };
+const setGhConfig = (c) => localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(c));
+const clearGhConfig = () => localStorage.removeItem(GH_CONFIG_KEY);
+
+async function ghLoad(cfg) {
+  const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${DATA_PATH}`, {
+    headers: { Authorization: `token ${cfg.token}`, Accept: "application/vnd.github.v3+json" },
+  });
+  if (res.status === 404) return { data: null, sha: null };
+  if (!res.ok) throw new Error(`GitHub ${res.status}`);
+  const j = await res.json();
+  return { data: JSON.parse(decodeURIComponent(escape(atob(j.content)))), sha: j.sha };
+}
+
+async function ghSave(cfg, data, sha) {
+  const body = {
+    message: `hub update ${new Date().toISOString().slice(0, 16)}`,
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
+  };
+  if (sha) body.sha = sha;
+  const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${DATA_PATH}`, {
+    method: "PUT",
+    headers: { Authorization: `token ${cfg.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `GitHub ${res.status}`); }
+  return (await res.json()).content.sha;
+}
+
+async function ghValidate(cfg) {
+  const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`, {
+    headers: { Authorization: `token ${cfg.token}` },
+  });
+  if (!res.ok) return false;
+  const j = await res.json();
+  return j.permissions?.push === true;
+}
+
+/* ═══════════════════════════════════════════
+   SETUP SCREEN
+   ═══════════════════════════════════════════ */
+function SetupScreen({ onComplete }) {
+  const [owner, setOwner] = useState("");
+  const [repo, setRepo] = useState("");
+  const [token, setToken] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [error, setError] = useState("");
+  const [step, setStep] = useState(0);
+
+  const handleTest = async () => {
+    if (!owner.trim() || !repo.trim() || !token.trim()) { setError("모든 항목을 입력하세요"); return; }
+    setTesting(true); setError("");
+    try {
+      const cfg = { owner: owner.trim(), repo: repo.trim(), token: token.trim() };
+      const valid = await ghValidate(cfg);
+      if (!valid) { setError("저장소 접근 실패. 토큰 권한 또는 저장소 이름을 확인하세요."); setTesting(false); return; }
+      setGhConfig(cfg);
+      onComplete(cfg);
+    } catch (e) { setError(e.message); }
+    setTesting(false);
+  };
+
+  const ss = { padding: "10px 14px", borderRadius: 8, border: "1px solid #EFEFEF", background: "#F7F6F3", fontSize: 14, color: "#37352F", outline: "none", width: "100%", fontFamily: "inherit" };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBFBFA", padding: 20 }}>
+      <div style={{ maxWidth: 480, width: "100%" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>⚡</div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: "#37352F" }}>My Hub 설정</h1>
+          <p style={{ fontSize: 14, color: "#9B9A97", marginTop: 6, lineHeight: 1.5 }}>
+            데이터를 GitHub 저장소에 저장합니다.<br />어디서든 같은 데이터에 접근할 수 있습니다.
+          </p>
+        </div>
+
+        {step === 0 && (
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #EFEFEF", padding: 24 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: "#37352F" }}>사전 준비</h3>
+
+            <div style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.8 }}>
+              <p style={{ marginBottom: 12 }}><strong>1.</strong> GitHub에 새 저장소를 만드세요</p>
+              <div style={{ background: "#F7F6F3", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 12 }}>
+                <a href="https://github.com/new" target="_blank" rel="noopener noreferrer" style={{ color: "#2F80ED" }}>github.com/new</a> → 이름: <code>my-hub-data</code> → Public 또는 Private → Create
+              </div>
+
+              <p style={{ marginBottom: 12 }}><strong>2.</strong> Personal Access Token을 만드세요</p>
+              <div style={{ background: "#F7F6F3", padding: "10px 14px", borderRadius: 6, marginBottom: 16, fontSize: 12, lineHeight: 1.8 }}>
+                <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer" style={{ color: "#2F80ED" }}>github.com/settings/tokens/new</a><br />
+                ✓ Note: <code>my-hub</code><br />
+                ✓ Expiration: 원하는 기간<br />
+                ✓ Scope: <strong>repo</strong> 체크<br />
+                → Generate token → 토큰 복사
+              </div>
+            </div>
+
+            <button onClick={() => setStep(1)} style={{
+              width: "100%", padding: 12, borderRadius: 8, border: "none", cursor: "pointer",
+              background: "#37352F", color: "#fff", fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+            }}>
+              다음: 정보 입력 →
+            </button>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #EFEFEF", padding: 24 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: "#37352F" }}>저장소 정보 입력</h3>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#9B9A97", display: "block", marginBottom: 4 }}>GitHub 아이디</label>
+              <input value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="예: dkcrafter" style={ss} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#9B9A97", display: "block", marginBottom: 4 }}>저장소 이름</label>
+              <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="예: my-hub-data" style={ss} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#9B9A97", display: "block", marginBottom: 4 }}>Personal Access Token</label>
+              <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_..." type="password" style={ss} />
+              <div style={{ fontSize: 11, color: "#B4B4B0", marginTop: 4 }}>토큰은 이 브라우저의 localStorage에만 저장됩니다</div>
+            </div>
+
+            {error && <div style={{ padding: "8px 12px", background: "#FEF2F2", borderRadius: 6, color: "#DC2626", fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setStep(0)} style={{
+                padding: 12, borderRadius: 8, border: "1px solid #EFEFEF", cursor: "pointer",
+                background: "#fff", color: "#6B6B6B", fontSize: 14, fontFamily: "inherit", flex: 1,
+              }}>← 뒤로</button>
+              <button onClick={handleTest} disabled={testing} style={{
+                padding: 12, borderRadius: 8, border: "none", cursor: testing ? "wait" : "pointer",
+                background: "#37352F", color: "#fff", fontSize: 14, fontWeight: 600, fontFamily: "inherit", flex: 2,
+              }}>
+                {testing ? "연결 확인 중..." : "연결 확인 & 시작"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   SYNC STATUS INDICATOR
+   ═══════════════════════════════════════════ */
+function SyncBadge({ status }) {
+  const colors = { synced: "#27AE60", saving: "#F2994A", error: "#EB5757", offline: "#9B9A97" };
+  const labels = { synced: "저장됨", saving: "저장 중...", error: "저장 실패", offline: "오프라인" };
+  return (
+    <span style={{ fontSize: 10, color: colors[status] || "#9B9A97", display: "flex", alignItems: "center", gap: 3 }}>
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: colors[status] || "#9B9A97" }} />
+      {labels[status] || status}
+    </span>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   APP CONSTANTS
+   ═══════════════════════════════════════════ */
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+const daysAgo = (ts) => Math.floor((Date.now() - ts) / 864e5);
+const fmtDate = (ts) => { const d = daysAgo(ts); if (d === 0) return "오늘"; if (d === 1) return "어제"; if (d < 7) return `${d}일 전`; const dt = new Date(ts); return `${dt.getMonth()+1}/${dt.getDate()}`; };
+const STALE = 7;
+const rndColor = () => "#" + Math.floor(Math.random()*0xAAAAAA+0x333333).toString(16);
+
+const PRIORITIES = [
+  { id: "high", name: "높음", color: "#EB5757" },
+  { id: "medium", name: "보통", color: "#F2994A" },
+  { id: "low", name: "낮음", color: "#BDBDBD" },
+];
+
+const DEFAULT_TASK_CATS = [
+  { id: "personal", name: "개인", color: "#EB5757", subs: [] },
+  { id: "work", name: "회사", color: "#2F80ED", subs: [] },
+  { id: "team", name: "팀 지시", color: "#9B51E0", subs: [] },
+  { id: "plan", name: "계획", color: "#27AE60", subs: [] },
+];
+
+const DEFAULT_NEWS_CATS = [
+  { id: "comfyui", name: "ComfyUI", color: "#27AE60", subs: [
+    { id: "nodes", name: "Custom Nodes" }, { id: "workflow", name: "워크플로우" },
+    { id: "model_c", name: "모델" }, { id: "lora_c", name: "LoRA" },
+  ]},
+  { id: "nuke", name: "Nuke", color: "#2F80ED", subs: [
+    { id: "copycat", name: "Copycat/ML" }, { id: "nuke_bridge", name: "Bridge" },
+    { id: "nuke_script", name: "스크립트" },
+  ]},
+  { id: "tracking", name: "Tracking", color: "#F2994A", subs: [
+    { id: "point_t", name: "Point" }, { id: "plane_t", name: "Plane" }, { id: "3d_t", name: "3D" },
+  ]},
+  { id: "roto", name: "Roto/Matte", color: "#EB5757", subs: [
+    { id: "auto_roto", name: "Auto Roto" }, { id: "matte_ex", name: "Matte 추출" },
+  ]},
+  { id: "inpaint", name: "Inpaint", color: "#9B51E0", subs: [] },
+  { id: "deepface", name: "DeepFaceLab", color: "#BB6BD9", subs: [
+    { id: "faceswap", name: "Face Swap" }, { id: "lipsync", name: "Lip Sync" },
+  ]},
+  { id: "upscale", name: "Upscale", color: "#6FCF97", subs: [] },
+  { id: "tutorial", name: "Tutorial", color: "#4ECDC4", subs: [] },
+  { id: "etc", name: "기타", color: "#828282", subs: [] },
+];
+
+const detectSource = (url) => { if (!url) return "Web"; const u = url.toLowerCase(); if (u.includes("facebook.com")||u.includes("fb.com")) return "Facebook"; if (u.includes("linkedin.com")) return "LinkedIn"; if (u.includes("reddit.com")) return "Reddit"; if (u.includes("youtube.com")||u.includes("youtu.be")) return "YouTube"; if (u.includes("twitter.com")||u.includes("x.com")) return "X"; if (u.includes("arxiv.org")) return "arXiv"; if (u.includes("github.com")) return "GitHub"; return "Web"; };
+
+const defaultData = () => ({ tasks: [], news: [], taskCats: DEFAULT_TASK_CATS, newsCats: DEFAULT_NEWS_CATS });
+
+function newsMatchesFilter(item, filterId, newsCats) {
+  if (filterId === "all") return true;
+  const cats = item.categories || [], subs = item.subCategories || [];
+  if (cats.includes(filterId)) return true;
+  if (subs.includes(filterId)) return true;
+  return false;
+}
+
+/* ═══════════════════════════════════════════
+   ROOT APP (with GitHub auth gate)
+   ═══════════════════════════════════════════ */
+function RootApp() {
+  const [ghConfig, setGhConfigState] = useState(getGhConfig());
+
+  if (!ghConfig) {
+    return <SetupScreen onComplete={(cfg) => setGhConfigState(cfg)} />;
+  }
+
+  return <MyHub ghConfig={ghConfig} onLogout={() => { clearGhConfig(); setGhConfigState(null); }} />;
+}
+
+/* ═══════════════════════════════════════════
+   MAIN HUB APP
+   ═══════════════════════════════════════════ */
+function MyHub({ ghConfig, onLogout }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState("synced");
+  const [view, setView] = useState("tasks");
+  const [taskFilter, setTaskFilter] = useState("all");
+  const [taskTab, setTaskTab] = useState("active");
+  const [newsMainFilter, setNewsMainFilter] = useState("all");
+  const [newsSubFilter, setNewsSubFilter] = useState(null);
+  const [search, setSearch] = useState("");
+  const [modal, setModal] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [catEdit, setCatEdit] = useState(null);
+  const [sideExpanded, setSideExpanded] = useState([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const saveRef = useRef(null);
+  const shaRef = useRef(null);
+
+  // Load from GitHub (with localStorage fallback)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: ghData, sha } = await ghLoad(ghConfig);
+        shaRef.current = sha;
+        if (ghData) {
+          if (!ghData.taskCats) ghData.taskCats = DEFAULT_TASK_CATS;
+          if (!ghData.newsCats) ghData.newsCats = DEFAULT_NEWS_CATS;
+          ghData.taskCats = ghData.taskCats.map((c) => ({ ...c, subs: c.subs || [] }));
+          ghData.newsCats = ghData.newsCats.map((c) => ({ ...c, subs: c.subs || [] }));
+          setData(ghData);
+          localStorage.setItem(LOCAL_CACHE, JSON.stringify(ghData));
+          setSyncStatus("synced");
+        } else {
+          // No data.json yet, use defaults or local cache
+          const cached = localStorage.getItem(LOCAL_CACHE);
+          setData(cached ? JSON.parse(cached) : defaultData());
+        }
+      } catch (e) {
+        console.warn("GitHub load failed, using local cache:", e);
+        const cached = localStorage.getItem(LOCAL_CACHE);
+        setData(cached ? JSON.parse(cached) : defaultData());
+        setSyncStatus("offline");
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Save: localStorage immediately, GitHub debounced
+  const save = useCallback((d) => {
+    setData(d);
+    localStorage.setItem(LOCAL_CACHE, JSON.stringify(d));
+    setSyncStatus("saving");
+
+    clearTimeout(saveRef.current);
+    saveRef.current = setTimeout(async () => {
+      try {
+        const newSha = await ghSave(ghConfig, d, shaRef.current);
+        shaRef.current = newSha;
+        setSyncStatus("synced");
+      } catch (e) {
+        console.error("GitHub save failed:", e);
+        setSyncStatus("error");
+        // Retry once after 3 seconds
+        setTimeout(async () => {
+          try {
+            // Re-fetch sha in case it changed
+            const { sha } = await ghLoad(ghConfig);
+            shaRef.current = sha;
+            const newSha = await ghSave(ghConfig, d, sha);
+            shaRef.current = newSha;
+            setSyncStatus("synced");
+          } catch { setSyncStatus("error"); }
+        }, 3000);
+      }
+    }, 1500);
+  }, [ghConfig]);
+
+  if (loading || !data) return <Loader />;
+
+  const staleT = data.tasks.filter((t) => !t.done && daysAgo(t.lastChecked || t.createdAt) >= STALE);
+  const staleN = data.news.filter((n) => !n.read && daysAgo(n.lastChecked || n.createdAt) >= STALE);
+  const reminders = staleT.length + staleN.length;
+  const activeNewsFilter = newsSubFilter || newsMainFilter;
+  const filteredTasks = data.tasks.filter((t) => (taskTab === "active" ? !t.done : t.done)).filter((t) => taskFilter === "all" || t.category === taskFilter).filter((t) => !search || `${t.title} ${t.desc || ""}`.toLowerCase().includes(search.toLowerCase()));
+  const filteredNews = data.news.filter((n) => newsMatchesFilter(n, activeNewsFilter, data.newsCats)).filter((n) => !search || `${n.title} ${n.description || ""}`.toLowerCase().includes(search.toLowerCase()));
+
+  const addTask = (t) => save({ ...data, tasks: [{ ...t, id: uid(), createdAt: Date.now(), done: false, lastChecked: null }, ...data.tasks] });
+  const updTask = (id, u) => save({ ...data, tasks: data.tasks.map((t) => t.id === id ? { ...t, ...u } : t) });
+  const delTask = (id) => save({ ...data, tasks: data.tasks.filter((t) => t.id !== id) });
+  const addNews = (n) => save({ ...data, news: [{ ...n, id: uid(), createdAt: Date.now(), read: false, lastChecked: null }, ...data.news] });
+  const updNews = (id, u) => save({ ...data, news: data.news.map((n) => n.id === id ? { ...n, ...u } : n) });
+  const delNews = (id) => save({ ...data, news: data.news.filter((n) => n.id !== id) });
+
+  const getCats = (type) => type === "task" ? data.taskCats : data.newsCats;
+  const setCats = (type, cats) => save({ ...data, [type === "task" ? "taskCats" : "newsCats"]: cats });
+  const addCat = (type) => setCats(type, [...getCats(type), { id: uid(), name: "새 카테고리", color: rndColor(), subs: [] }]);
+  const updCat = (type, id, u) => setCats(type, getCats(type).map((c) => c.id === id ? { ...c, ...u } : c));
+  const delCat = (type, id) => setCats(type, getCats(type).filter((c) => c.id !== id));
+  const addSub = (type, catId) => setCats(type, getCats(type).map((c) => c.id === catId ? { ...c, subs: [...c.subs, { id: uid(), name: "새 서브" }] } : c));
+  const updSub = (type, catId, subId, u) => setCats(type, getCats(type).map((c) => c.id === catId ? { ...c, subs: c.subs.map((s) => s.id === subId ? { ...s, ...u } : s) } : c));
+  const delSub = (type, catId, subId) => setCats(type, getCats(type).map((c) => c.id === catId ? { ...c, subs: c.subs.filter((s) => s.id !== subId) } : c));
+
+  const openModal = (t, item = null) => { setEditItem(item); setModal(t); };
+  const closeModal = () => { setModal(null); setEditItem(null); };
+  const toggleSideExp = (id) => setSideExpanded((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+
+  const navItems = [
+    { id: "tasks", icon: "☑", label: "할 일", count: data.tasks.filter((t) => !t.done).length },
+    { id: "news", icon: "◆", label: "뉴스", count: data.news.filter((n) => !n.read).length },
+    { id: "reminders", icon: "⏰", label: "리마인더", count: reminders, hot: true },
+  ];
+  const currentNewsCats = data.newsCats;
+  const selectedMainCat = currentNewsCats.find((c) => c.id === newsMainFilter);
+  const newsFilterLabel = newsSubFilter
+    ? (() => { const p = currentNewsCats.find((c) => c.subs.some((s) => s.id === newsSubFilter)); return `${p?.name} › ${p?.subs.find((s) => s.id === newsSubFilter)?.name}`; })()
+    : newsMainFilter !== "all" ? selectedMainCat?.name : null;
+  const catType = view === "tasks" ? "task" : "news";
+
+  return (
+    <React.Fragment>
+      <style>{`
+        ::selection{background:#DBEAFE;color:#1D4ED8}
+        ::-webkit-scrollbar{width:5px;height:4px}
+        ::-webkit-scrollbar-thumb{background:#E0E0E0;border-radius:4px}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        @keyframes fadeSlide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .row-h:hover{background:#FAFAFA}
+        .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
+        @media(max-width:767px){.desk{display:none!important}.main-ml{margin-left:0!important}.ngrid{grid-template-columns:1fr!important}}
+        @media(min-width:768px){.mob{display:none!important}}
+      `}</style>
+
+      <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'Noto Sans KR', sans-serif", color: "#37352F" }}>
+
+        {/* DESKTOP SIDEBAR */}
+        <aside className="desk" style={{ width: 220, position: "fixed", top: 0, left: 0, bottom: 0, background: "#FBFBFA", borderRight: "1px solid #EFEFEF", padding: "20px 10px", overflowY: "auto", zIndex: 40, display: "flex", flexDirection: "column" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, padding: "4px 8px", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>⚡</span> My Hub
+          </div>
+          <div style={{ padding: "0 8px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+            <SyncBadge status={syncStatus} />
+            <button onClick={() => setShowSettings(true)} style={{ ...linkBtn, fontSize: 10, color: "#B4B4B0" }}>⚙</button>
+          </div>
+
+          {navItems.map((n) => (
+            <button key={n.id} onClick={() => { setView(n.id); setSearch(""); setFilterOpen(false); }} style={{ ...navBtn, background: view === n.id ? "#EFEFEF" : "transparent", color: view === n.id ? "#37352F" : "#9B9A97", fontWeight: view === n.id ? 600 : 400 }}>
+              <span style={{ fontSize: 14 }}>{n.icon}</span>
+              <span style={{ flex: 1 }}>{n.label}</span>
+              {n.count > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: n.hot ? "#FEE2E2" : "#F0F0EE", color: n.hot ? "#DC2626" : "#B4B4B0", fontWeight: 600 }}>{n.count}</span>}
+            </button>
+          ))}
+
+          {(view === "tasks" || view === "news") && (
+            <div style={{ marginTop: 18, padding: "0 8px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#B4B4B0", letterSpacing: 0.5 }}>카테고리</span>
+                <button onClick={() => setCatEdit(catEdit ? null : catType)} style={{ ...linkBtn, fontSize: 10 }}>{catEdit === catType ? "완료" : "편집"}</button>
+              </div>
+
+              <SidebarCatRow label="전체" active={(view==="tasks"?taskFilter:newsMainFilter)==="all"&&!newsSubFilter} onClick={() => { setTaskFilter("all"); setNewsMainFilter("all"); setNewsSubFilter(null); }} dotColor="#37352F" count={view==="tasks"?data.tasks.filter((t)=>!t.done).length:data.news.length} />
+
+              {getCats(catType).map((cat) => {
+                const hasSubs = cat.subs.length > 0, isExp = sideExpanded.includes(cat.id);
+                const isCatActive = view === "tasks" ? taskFilter === cat.id : newsMainFilter === cat.id && !newsSubFilter;
+                return (
+                  <div key={cat.id}>
+                    {catEdit === catType ? (
+                      <div style={{ padding: "3px 0" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <input type="color" value={cat.color} onChange={(e) => updCat(catType, cat.id, { color: e.target.value })} style={{ width: 14, height: 14, border: "none", padding: 0, cursor: "pointer", background: "none" }} />
+                          <input value={cat.name} onChange={(e) => updCat(catType, cat.id, { name: e.target.value })} style={editInput} />
+                          <button onClick={() => delCat(catType, cat.id)} style={{ ...linkBtn, color: "#EB5757", fontSize: 11 }}>✕</button>
+                        </div>
+                        {cat.subs.map((sub) => (
+                          <div key={sub.id} style={{ display: "flex", alignItems: "center", gap: 4, paddingLeft: 18, marginTop: 2 }}>
+                            <span style={{ width: 5, height: 5, borderRadius: 1, background: `${cat.color}66` }} />
+                            <input value={sub.name} onChange={(e) => updSub(catType, cat.id, sub.id, { name: e.target.value })} style={{ ...editInput, fontSize: 11, borderBottom: "1px dashed #EFEFEF" }} />
+                            <button onClick={() => delSub(catType, cat.id, sub.id)} style={{ ...linkBtn, color: "#EB5757", fontSize: 10 }}>✕</button>
+                          </div>
+                        ))}
+                        <button onClick={() => addSub(catType, cat.id)} style={{ ...linkBtn, fontSize: 10, paddingLeft: 18, marginTop: 2, color: `${cat.color}99` }}>+ 서브</button>
+                      </div>
+                    ) : (
+                      <React.Fragment>
+                        <div style={{ display: "flex", alignItems: "center", padding: "4px 2px", borderRadius: 4, background: isCatActive ? `${cat.color}0C` : "transparent" }}>
+                          {hasSubs ? (
+                            <button onClick={() => toggleSideExp(cat.id)} style={{ ...arrowBtn, color: cat.color, transform: isExp ? "rotate(90deg)" : "none" }}>▶</button>
+                          ) : (
+                            <span style={{ width: 14, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ width: 7, height: 7, borderRadius: 2, background: cat.color }} /></span>
+                          )}
+                          <button onClick={() => { if (view==="tasks") setTaskFilter(isCatActive?"all":cat.id); else { setNewsMainFilter(isCatActive?"all":cat.id); setNewsSubFilter(null); } }} style={{ ...catBtn }}>
+                            <span style={{ fontSize: 12, color: isCatActive ? cat.color : "#37352F", fontWeight: isCatActive ? 600 : 400 }}>{cat.name}</span>
+                            <span style={{ fontSize: 10, color: "#B4B4B0", marginLeft: "auto" }}>{view==="tasks"?data.tasks.filter((t)=>!t.done&&t.category===cat.id).length:data.news.filter((n)=>(n.categories||[]).includes(cat.id)).length}</span>
+                          </button>
+                        </div>
+                        {hasSubs && isExp && (
+                          <div style={{ paddingLeft: 14, borderLeft: `1.5px solid ${cat.color}22`, marginLeft: 6, marginTop: 1, marginBottom: 2 }}>
+                            {cat.subs.map((sub) => { const isSubActive = newsSubFilter === sub.id; return (
+                              <button key={sub.id} onClick={() => { if (view==="news") { setNewsMainFilter(cat.id); setNewsSubFilter(isSubActive?null:sub.id); } }} style={{ ...catBtn, padding: "3px 6px", borderRadius: 3, background: isSubActive ? `${cat.color}0C` : "transparent" }}>
+                                <span style={{ fontSize: 11.5, color: isSubActive ? cat.color : "#9B9A97", fontWeight: isSubActive ? 600 : 400 }}>{sub.name}</span>
+                                <span style={{ fontSize: 10, color: "#D3D1CB", marginLeft: "auto" }}>{data.news.filter((n)=>(n.subCategories||[]).includes(sub.id)).length}</span>
+                              </button>
+                            ); })}
+                          </div>
+                        )}
+                      </React.Fragment>
+                    )}
+                  </div>
+                );
+              })}
+              {catEdit === catType && <button onClick={() => addCat(catType)} style={{ ...linkBtn, fontSize: 11, marginTop: 4, color: "#B4B4B0" }}>+ 카테고리 추가</button>}
+            </div>
+          )}
+          <div style={{ marginTop: "auto", padding: "12px 8px", borderTop: "1px solid #EFEFEF" }}>
+            <div style={{ fontSize: 10, color: "#B4B4B0", lineHeight: 1.6 }}>할 일 {data.tasks.length} · 뉴스 {data.news.length}</div>
+          </div>
+        </aside>
+
+        {/* MAIN CONTENT */}
+        <main className="main-ml" style={{ flex: 1, marginLeft: 220, minHeight: "100vh", paddingBottom: 80 }}>
+          {/* Top bar */}
+          <div style={{ position: "sticky", top: 0, zIndex: 30, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid #F0F0EE", padding: "10px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ position: "relative", flex: "0 1 300px" }}>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="검색..." style={{ ...inputSt, paddingLeft: 30, width: "100%" }} />
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "#B4B4B0" }}>⌕</span>
+            </div>
+            <button className="mob" onClick={() => setFilterOpen(!filterOpen)} style={{ background: filterOpen ? "#37352F" : "#F7F6F3", border: "none", borderRadius: 6, padding: "7px 10px", fontSize: 12, cursor: "pointer", color: filterOpen ? "#fff" : "#6B6B6B", fontWeight: 500, fontFamily: "inherit" }}>{filterOpen ? "✕ 닫기" : "≡ 필터"}</button>
+            <div style={{ flex: 1 }} />
+            <span className="mob"><SyncBadge status={syncStatus} /></span>
+            <button className="mob" onClick={() => setShowSettings(true)} style={{ ...linkBtn, fontSize: 14, color: "#B4B4B0" }}>⚙</button>
+            {reminders > 0 && view !== "reminders" && <button className="desk" onClick={() => setView("reminders")} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, color: "#DC2626", cursor: "pointer", fontFamily: "inherit" }}>⏰ {reminders}</button>}
+          </div>
+
+          {/* Mobile filter panel */}
+          {filterOpen && (view === "tasks" || view === "news") && (
+            <div className="mob" style={{ borderBottom: "1px solid #EFEFEF", background: "#FBFBFA" }}>
+              {catEdit === catType ? (
+                <div style={{ padding: "10px 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, fontWeight: 700, color: "#B4B4B0" }}>카테고리 편집</span><button onClick={() => setCatEdit(null)} style={{ ...linkBtn, fontSize: 11, color: "#2F80ED" }}>완료</button></div>
+                  {getCats(catType).map((cat) => (
+                    <div key={cat.id} style={{ marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="color" value={cat.color} onChange={(e)=>updCat(catType,cat.id,{color:e.target.value})} style={{ width: 18, height: 18, border: "none", padding: 0, cursor: "pointer" }} />
+                        <input value={cat.name} onChange={(e)=>updCat(catType,cat.id,{name:e.target.value})} style={{ ...editInput, fontSize: 13 }} />
+                        <button onClick={()=>delCat(catType,cat.id)} style={{ ...linkBtn, color: "#EB5757", fontSize: 14 }}>✕</button>
+                      </div>
+                      {cat.subs.length > 0 && <div style={{ paddingLeft: 24, marginTop: 2 }}>
+                        {cat.subs.map((sub) => (<div key={sub.id} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}><span style={{ width: 6, height: 6, borderRadius: 1, background: `${cat.color}66` }} /><input value={sub.name} onChange={(e)=>updSub(catType,cat.id,sub.id,{name:e.target.value})} style={{ ...editInput, fontSize: 12 }} /><button onClick={()=>delSub(catType,cat.id,sub.id)} style={{ ...linkBtn, color: "#EB5757", fontSize: 12 }}>✕</button></div>))}
+                        <button onClick={()=>addSub(catType,cat.id)} style={{ ...linkBtn, fontSize: 11, paddingLeft: 12, marginTop: 2, color: `${cat.color}99` }}>+ 서브</button>
+                      </div>}
+                    </div>
+                  ))}
+                  <button onClick={()=>addCat(catType)} style={{ ...linkBtn, fontSize: 12, color: "#2F80ED", marginTop: 4 }}>+ 메인 카테고리 추가</button>
+                </div>
+              ) : (
+                <React.Fragment>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px 0" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#B4B4B0" }}>카테고리</span>
+                    <button onClick={()=>setCatEdit(catType)} style={{ ...linkBtn, fontSize: 10, color: "#2F80ED" }}>편집</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 5, padding: "8px 16px", overflowX: "auto" }}>
+                    <Chip label={`전체 ${view==="tasks"?data.tasks.filter((t)=>!t.done).length:data.news.length}`} active={(view==="tasks"?taskFilter:newsMainFilter)==="all"} onClick={()=>{setTaskFilter("all");setNewsMainFilter("all");setNewsSubFilter(null);}} />
+                    {getCats(catType).map((cat)=>{const isA=view==="tasks"?taskFilter===cat.id:newsMainFilter===cat.id;return(<Chip key={cat.id} label={cat.name} color={cat.color} active={isA} hasSubs={cat.subs.length>0} expanded={isA} onClick={()=>{if(view==="tasks")setTaskFilter(isA?"all":cat.id);else{setNewsMainFilter(isA?"all":cat.id);setNewsSubFilter(null);}}} />);})}
+                  </div>
+                  {view==="news"&&selectedMainCat?.subs.length>0&&(
+                    <div style={{ display: "flex", gap: 4, padding: "0 16px 10px", overflowX: "auto", animation: "fadeSlide 0.2s" }}>
+                      <SubChip label={`전체 ${data.news.filter((n)=>(n.categories||[]).includes(newsMainFilter)).length}`} active={!newsSubFilter} color={selectedMainCat.color} onClick={()=>setNewsSubFilter(null)} />
+                      {selectedMainCat.subs.map((sub)=>(<SubChip key={sub.id} label={sub.name} count={data.news.filter((n)=>(n.subCategories||[]).includes(sub.id)).length} active={newsSubFilter===sub.id} color={selectedMainCat.color} onClick={()=>setNewsSubFilter(newsSubFilter===sub.id?null:sub.id)} />))}
+                    </div>
+                  )}
+                </React.Fragment>
+              )}
+            </div>
+          )}
+
+          {!filterOpen && newsFilterLabel && view === "news" && (
+            <div className="mob" style={{ padding: "6px 16px", background: "#FBFBFA", borderBottom: "1px solid #EFEFEF", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, color: "#9B9A97" }}>필터:</span>
+              <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: `${selectedMainCat?.color||"#37352F"}15`, color: selectedMainCat?.color||"#37352F" }}>{newsFilterLabel}</span>
+              <button onClick={()=>{setNewsMainFilter("all");setNewsSubFilter(null);}} style={{ ...linkBtn, fontSize: 12, color: "#B4B4B0" }}>✕</button>
+            </div>
+          )}
+
+          <div style={{ padding: "20px 20px" }}>
+            {/* TASKS */}
+            {view === "tasks" && (
+              <section style={{ animation: "fadeUp 0.3s" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div><h1 style={{ fontSize: 22, fontWeight: 700 }}>할 일</h1><p style={{ fontSize: 12, color: "#9B9A97", marginTop: 1 }}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div>
+                  <button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button>
+                </div>
+                <div style={{ display: "flex", gap: 12, marginBottom: 12, borderBottom: "1px solid #EFEFEF", paddingBottom: 6 }}>
+                  {["active","done"].map((t)=>(<button key={t} onClick={()=>setTaskTab(t)} style={{ ...tabBtn, color: taskTab===t?"#37352F":"#B4B4B0", fontWeight: taskTab===t?600:400, borderBottom: taskTab===t?"2px solid #37352F":"2px solid transparent" }}>{t==="active"?"진행 중":"완료"}</button>))}
+                </div>
+                {filteredTasks.length===0?<Empty icon="📝" msg={taskTab==="active"?"할 일을 추가해보세요":"완료된 항목 없음"} />:
+                  filteredTasks.map((t,i)=>{const cat=data.taskCats.find((c)=>c.id===t.category);const stale=!t.done&&daysAgo(t.lastChecked||t.createdAt)>=STALE;return(
+                    <div key={t.id} className="row-h" style={{ padding: "10px 4px", borderBottom: "1px solid #F7F6F3", display: "flex", alignItems: "flex-start", gap: 10, background: stale?"#FFFBFA":"transparent", borderLeft: stale?"3px solid #EB5757":"3px solid transparent", paddingLeft: stale?10:4, animation: `fadeUp 0.25s ease ${i*0.02}s both` }}>
+                      <button onClick={()=>updTask(t.id,{done:!t.done,lastChecked:Date.now()})} style={{ width: 18, height: 18, borderRadius: 3, flexShrink: 0, marginTop: 1, border: `1.5px solid ${t.done?(cat?.color||"#37352F"):"#D3D1CB"}`, background: t.done?(cat?.color||"#37352F"):"transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{t.done&&<span style={{ color: "#fff", fontSize: 10, fontWeight: 800 }}>✓</span>}</button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 500, color: t.done?"#B4B4B0":"#37352F", textDecoration: t.done?"line-through":"none" }}>{t.title}</div>
+                        {t.desc&&<div style={{ fontSize: 12, color: "#9B9A97", marginTop: 2, lineHeight: 1.4 }}>{t.desc}</div>}
+                        <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap", alignItems: "center" }}>
+                          {cat&&<Tag label={cat.name} color={cat.color} />}
+                          <span style={{ fontSize: 10, color: stale?"#EB5757":"#B4B4B0" }}>{fmtDate(t.createdAt)}</span>
+                          {t.dueDate&&<span style={{ fontSize: 10, color: !t.done&&daysAgo(t.dueDate)>0?"#EB5757":"#9B9A97" }}>마감 {fmtDate(t.dueDate)}</span>}
+                          {stale&&<span style={{ fontSize: 9, fontWeight: 700, color: "#EB5757" }}>미확인 {daysAgo(t.lastChecked||t.createdAt)}일</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                        {stale&&<Mini onClick={()=>updTask(t.id,{lastChecked:Date.now()})} c="#27AE60">✓</Mini>}
+                        <Mini onClick={()=>openModal("task",t)}>✎</Mini>
+                        <Mini onClick={()=>delTask(t.id)}>✕</Mini>
+                      </div>
+                    </div>
+                  );})
+                }
+                <button onClick={()=>openModal("task")} style={{ ...linkBtn, padding: "10px 4px", fontSize: 12.5, color: "#B4B4B0" }}>+ 새 할 일</button>
+              </section>
+            )}
+
+            {/* NEWS */}
+            {view === "news" && (
+              <section style={{ animation: "fadeUp 0.3s" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div><h1 style={{ fontSize: 22, fontWeight: 700 }}>뉴스 허브</h1><p style={{ fontSize: 12, color: "#9B9A97", marginTop: 1 }}>{filteredNews.length}개{newsFilterLabel?` · ${newsFilterLabel}`:""}</p></div>
+                  <button onClick={()=>openModal("news")} style={primaryBtn}>+ 추가</button>
+                </div>
+                {filteredNews.length===0?<Empty icon="📰" msg="뉴스를 추가해보세요" />:(
+                  <div className="ngrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
+                    {filteredNews.map((n,i)=>{const stale=!n.read&&daysAgo(n.lastChecked||n.createdAt)>=STALE;return(
+                      <div key={n.id} className="card-h" style={{ border: `1px solid ${stale?"#FECACA":"#EFEFEF"}`, borderRadius: 8, overflow: "hidden", opacity: n.read?0.55:1, animation: `fadeUp 0.3s ease ${i*0.03}s both` }}>
+                        {n.thumbnail?(<div style={{ height: 140, overflow: "hidden", background: "#F7F6F3" }}><img src={n.thumbnail} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e)=>{e.target.parentElement.style.height="0"}} /></div>):(<div style={{ height: 36, background: "#FBFBFA", borderBottom: "1px solid #F7F6F3", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 10, color: "#B4B4B0", letterSpacing: 1 }}>{n.source||detectSource(n.url)}</span></div>)}
+                        <div style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "start", gap: 6 }}><h3 style={{ flex: 1, fontSize: 13.5, fontWeight: 600, lineHeight: 1.4 }}>{n.title}</h3>{stale&&<span style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: "#FEE2E2", color: "#EB5757", flexShrink: 0 }}>{daysAgo(n.lastChecked||n.createdAt)}일</span>}</div>
+                          {n.description&&<p style={{ fontSize: 12, color: "#9B9A97", lineHeight: 1.45, marginTop: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{n.description}</p>}
+                          <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 8 }}>
+                            {(n.categories||[]).map((cid)=>{const mc=data.newsCats.find((c)=>c.id===cid);return mc?<Tag key={cid} label={mc.name} color={mc.color} />:null;})}
+                            {(n.subCategories||[]).map((sid)=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===sid));const sub=p?.subs.find((s)=>s.id===sid);return sub?<span key={sid} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#F7F6F3", color: "#9B9A97" }}>{sub.name}</span>:null;})}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTop: "1px solid #F7F6F3" }}>
+                            <span style={{ fontSize: 10, color: "#B4B4B0" }}>{n.source||detectSource(n.url)} · {fmtDate(n.createdAt)}</span>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {n.url&&<a href={n.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#2F80ED", textDecoration: "none", fontWeight: 500 }}>열기↗</a>}
+                              <button onClick={()=>updNews(n.id,{read:!n.read,lastChecked:Date.now()})} style={tinyBtn}>{n.read?"✓읽음":"읽기"}</button>
+                              <button onClick={()=>openModal("news-edit",n)} style={tinyBtn}>✎</button>
+                              <button onClick={()=>delNews(n.id)} style={tinyBtn}>✕</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );})}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* REMINDERS */}
+            {view === "reminders" && (
+              <section style={{ animation: "fadeUp 0.3s" }}>
+                <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>리마인더</h1>
+                <p style={{ fontSize: 13, color: "#9B9A97", marginBottom: 24 }}>{STALE}일 이상 미확인 항목</p>
+                {reminders===0?<Empty icon="🎉" msg="모두 확인 완료!" />:(
+                  <React.Fragment>
+                    {staleT.length>0&&(<div style={{ marginBottom: 24 }}><h3 style={{ fontSize: 14, fontWeight: 700, color: "#EB5757", marginBottom: 8 }}>할 일 — {staleT.length}개</h3>{staleT.map((t)=>{const cat=data.taskCats.find((c)=>c.id===t.category);return(<div key={t.id} style={{ padding: "10px 12px", borderBottom: "1px solid #F7F6F3", display: "flex", alignItems: "center", gap: 10, borderLeft: `3px solid ${cat?.color||"#EB5757"}` }}><div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</div><div style={{ fontSize: 11, color: "#EB5757", marginTop: 1 }}>{daysAgo(t.lastChecked||t.createdAt)}일 미확인</div></div><Rbtn c="#27AE60" onClick={()=>updTask(t.id,{lastChecked:Date.now()})}>확인</Rbtn><Rbtn c="#2F80ED" onClick={()=>updTask(t.id,{done:true,lastChecked:Date.now()})}>완료</Rbtn></div>);})}</div>)}
+                    {staleN.length>0&&(<div><h3 style={{ fontSize: 14, fontWeight: 700, color: "#F2994A", marginBottom: 8 }}>뉴스 — {staleN.length}개</h3>{staleN.map((n)=>(<div key={n.id} style={{ padding: "10px 12px", borderBottom: "1px solid #F7F6F3", display: "flex", alignItems: "center", gap: 10, borderLeft: "3px solid #F2994A" }}><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.title}</div><div style={{ fontSize: 11, color: "#F2994A", marginTop: 1 }}>{daysAgo(n.lastChecked||n.createdAt)}일 미확인</div></div>{n.url&&<a href={n.url} target="_blank" rel="noopener noreferrer" style={{ ...rbtnSt("#2F80ED"), textDecoration: "none" }}>열기</a>}<Rbtn c="#27AE60" onClick={()=>updNews(n.id,{lastChecked:Date.now()})}>확인</Rbtn><Rbtn c="#9B9A97" onClick={()=>updNews(n.id,{read:true,lastChecked:Date.now()})}>읽음</Rbtn></div>))}</div>)}
+                  </React.Fragment>
+                )}
+              </section>
+            )}
+          </div>
+        </main>
+
+        {/* MOBILE BOTTOM TAB */}
+        <nav className="mob" style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40, background: "#fff", borderTop: "1px solid #EFEFEF", display: "flex", padding: "6px 0 10px", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+          {navItems.map((n)=>(<button key={n.id} onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative", fontFamily: "inherit" }}><span style={{ fontSize: 18, color: view===n.id?"#37352F":"#B4B4B0" }}>{n.icon}</span><span style={{ fontSize: 10, color: view===n.id?"#37352F":"#B4B4B0", fontWeight: view===n.id?600:400 }}>{n.label}</span>{n.hot&&n.count>0&&<span style={{ position: "absolute", top: -2, right: "25%", minWidth: 16, height: 16, borderRadius: 8, background: "#DC2626", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{n.count}</span>}</button>))}
+        </nav>
+
+        {/* MODALS */}
+        {modal&&(<div onClick={closeModal} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.25)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}><div onClick={(e)=>e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 520, maxHeight: "88vh", overflow: "auto", animation: "slideUp 0.25s", boxShadow: "0 -8px 32px rgba(0,0,0,0.1)" }}>
+          {modal==="task"&&<TaskForm initial={editItem} cats={data.taskCats} onSubmit={(t)=>{editItem?updTask(editItem.id,t):addTask(t);closeModal();}} onClose={closeModal} />}
+          {modal==="news"&&<NewsForm cats={data.newsCats} onSubmit={(n)=>{addNews(n);closeModal();}} onClose={closeModal} />}
+          {modal==="news-edit"&&editItem&&<NewsEditForm initial={editItem} cats={data.newsCats} onSubmit={(u)=>{updNews(editItem.id,u);closeModal();}} onClose={closeModal} />}
+        </div></div>)}
+
+        {/* SETTINGS MODAL */}
+        {showSettings&&(<div onClick={()=>setShowSettings(false)} style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.25)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}><div onClick={(e)=>e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, width: "100%", maxWidth: 400, padding: 24 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>⚙ 설정</h2>
+          <div style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.6, marginBottom: 16 }}>
+            <strong>GitHub 저장소:</strong> {ghConfig.owner}/{ghConfig.repo}<br />
+            <strong>동기화 상태:</strong> <SyncBadge status={syncStatus} /><br />
+            <strong>데이터:</strong> 할 일 {data.tasks.length}개, 뉴스 {data.news.length}개
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={()=>{save(data);setShowSettings(false);}} style={{ ...primaryBtn, flex: 1 }}>수동 동기화</button>
+            <button onClick={()=>{if(confirm("연결을 해제하시겠습니까?\n로컬 캐시는 유지됩니다.")){onLogout();setShowSettings(false);}}} style={{ padding: "7px 16px", borderRadius: 6, border: "1px solid #FECACA", cursor: "pointer", background: "#fff", color: "#DC2626", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" }}>연결 해제</button>
+          </div>
+        </div></div>)}
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ═══ SMALL COMPONENTS ═══ */
+const Loader = () => (<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}><div style={{ width: 24, height: 24, border: "2.5px solid #EFEFEF", borderTopColor: "#37352F", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /></div>);
+const Empty = ({ icon, msg }) => (<div style={{ textAlign: "center", padding: "50px 20px", color: "#B4B4B0" }}><div style={{ fontSize: 32, marginBottom: 8 }}>{icon}</div><div style={{ fontSize: 13 }}>{msg}</div></div>);
+const Tag = ({ label, color }) => (<span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: `${color}15`, color, fontWeight: 600 }}>{label}</span>);
+const Mini = ({ onClick, children, c }) => (<button onClick={onClick} style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: c?`${c}15`:"#F7F6F3", color: c||"#9B9A97", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{children}</button>);
+const rbtnSt=(c)=>({padding:"4px 10px",borderRadius:5,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:`${c}15`,color:c,fontFamily:"inherit",whiteSpace:"nowrap"});
+const Rbtn=({c,onClick,children})=>(<button onClick={onClick} style={rbtnSt(c)}>{children}</button>);
+const Chip=({label,color,active,onClick,hasSubs,expanded})=>(<button onClick={onClick} style={{padding:"5px 12px",borderRadius:5,fontSize:12,fontWeight:500,border:"none",cursor:"pointer",background:active?(color||"#37352F"):"#F0F0EE",color:active?"#fff":"#6B6B6B",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",transition:"all 0.15s",display:"flex",alignItems:"center",gap:3}}>{label}{hasSubs&&<span style={{fontSize:8,display:"inline-block",transform:expanded?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</span>}</button>);
+const SubChip=({label,count,active,color,onClick})=>(<button onClick={onClick} style={{padding:"3px 10px",borderRadius:4,fontSize:11,fontWeight:500,border:active?`1px solid ${color}33`:"1px solid transparent",background:active?`${color}18`:"#F7F6F3",color:active?color:"#9B9A97",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit"}}>{label}{count!==undefined?` ${count}`:""}</button>);
+const SidebarCatRow=({label,active,onClick,dotColor,count})=>(<button onClick={onClick} style={{...catBtn,padding:"4px 2px",marginBottom:2}}><span style={{width:14,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{width:active?8:6,height:active?8:6,borderRadius:2,background:dotColor}} /></span><span style={{fontSize:12,fontWeight:active?600:400,color:"#37352F"}}>{label}</span><span style={{fontSize:10,color:"#B4B4B0",marginLeft:"auto"}}>{count}</span></button>);
+
+const navBtn={width:"100%",textAlign:"left",padding:"6px 10px",borderRadius:5,marginBottom:1,border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontFamily:"inherit"};
+const catBtn={flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:5,padding:"0 4px",fontFamily:"inherit",width:"100%",textAlign:"left"};
+const arrowBtn={background:"none",border:"none",cursor:"pointer",width:14,height:14,padding:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,transition:"transform 0.2s ease"};
+const linkBtn={background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"};
+const editInput={flex:1,border:"none",borderBottom:"1px solid #EFEFEF",background:"transparent",fontSize:12,color:"#37352F",outline:"none",padding:"1px 2px",fontFamily:"inherit"};
+const primaryBtn={padding:"7px 16px",borderRadius:6,border:"none",cursor:"pointer",background:"#37352F",color:"#fff",fontSize:12.5,fontWeight:600,fontFamily:"inherit"};
+const inputSt={padding:"8px 12px",borderRadius:6,border:"1px solid #EFEFEF",background:"#F7F6F3",fontSize:13,color:"#37352F",outline:"none",fontFamily:"inherit"};
+const tinyBtn={background:"none",border:"none",fontSize:11,color:"#9B9A97",cursor:"pointer",fontFamily:"inherit"};
+const tabBtn={background:"none",border:"none",cursor:"pointer",fontSize:12.5,paddingBottom:4,fontFamily:"inherit"};
+
+/* ═══ FORMS ═══ */
+const FField=({label,children})=>(<div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"#9B9A97",marginBottom:4}}>{label}</label>{children}</div>);
+const fInput={...inputSt,width:"100%"};
+
+function TaskForm({initial,cats,onSubmit,onClose}){const[title,setTitle]=useState(initial?.title||"");const[desc,setDesc]=useState(initial?.desc||"");const[cat,setCat]=useState(initial?.category||cats[0]?.id||"");const[pri,setPri]=useState(initial?.priority||"medium");const[due,setDue]=useState(initial?.dueDate?new Date(initial.dueDate).toISOString().split("T")[0]:"");return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>{initial?"할 일 수정":"새 할 일"}</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="할 일 입력" style={fInput} autoFocus /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="상세 내용 (선택)" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="분류"><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{cats.map((c)=>(<button key={c.id} onClick={()=>setCat(c.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:cat===c.id?c.color:"#F7F6F3",color:cat===c.id?"#fff":"#6B6B6B",border:"none",fontWeight:500,fontFamily:"inherit"}}>{c.name}</button>))}</div></FField><FField label="우선순위"><div style={{display:"flex",gap:4}}>{PRIORITIES.map((p)=>(<button key={p.id} onClick={()=>setPri(p.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:pri===p.id?`${p.color}20`:"#F7F6F3",color:pri===p.id?p.color:"#6B6B6B",border:pri===p.id?`1.5px solid ${p.color}`:"1.5px solid transparent",fontFamily:"inherit"}}>{p.name}</button>))}</div></FField><FField label="마감일"><input type="date" value={due} onChange={(e)=>setDue(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),desc,category:cat,priority:pri,dueDate:due?new Date(due).getTime():null})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>{initial?"수정":"추가"}</button></div></div>);}
+
+function NewsForm({cats,onSubmit,onClose}){const[url,setUrl]=useState("");const[title,setTitle]=useState("");const[desc,setDesc]=useState("");const[thumb,setThumb]=useState("");const[selCats,setSelCats]=useState([]);const[selSubs,setSelSubs]=useState([]);const[source,setSource]=useState("");const toggleCat=(id)=>setSelCats((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);const toggleSub=(id)=>setSelSubs((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE"}}><div style={{display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>뉴스 추가</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><p style={{fontSize:11,color:"#9B9A97",marginTop:1}}>URL 입력 후 수동으로 정보를 채워주세요</p></div><div style={{padding:"16px 20px"}}><FField label="URL"><input value={url} onChange={(e)=>{setUrl(e.target.value);setSource(detectSource(e.target.value));}} placeholder="https://..." style={fInput} autoFocus /></FField><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="기사 제목" style={fInput} /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="간단 메모" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="썸네일 URL"><input value={thumb} onChange={(e)=>setThumb(e.target.value)} placeholder="이미지 URL (선택)" style={fInput} /></FField><FField label="카테고리"><div style={{display:"flex",flexDirection:"column",gap:6}}>{cats.map((c)=>(<div key={c.id}><button onClick={()=>toggleCat(c.id)} style={{padding:"4px 10px",borderRadius:4,fontSize:12,cursor:"pointer",background:selCats.includes(c.id)?c.color:"#F7F6F3",color:selCats.includes(c.id)?"#fff":"#6B6B6B",border:"none",fontFamily:"inherit",fontWeight:500}}>{c.name}</button>{selCats.includes(c.id)&&c.subs.length>0&&(<div style={{display:"flex",gap:4,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>{c.subs.map((s)=>(<button key={s.id} onClick={()=>toggleSub(s.id)} style={{padding:"2px 8px",borderRadius:3,fontSize:11,cursor:"pointer",background:selSubs.includes(s.id)?`${c.color}20`:"#F7F6F3",color:selSubs.includes(s.id)?c.color:"#9B9A97",border:selSubs.includes(s.id)?`1px solid ${c.color}44`:"1px solid transparent",fontFamily:"inherit"}}>{s.name}</button>))}</div>)}</div>))}</div></FField><FField label="출처"><input value={source} onChange={(e)=>setSource(e.target.value)} placeholder="자동 감지" style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),url,description:desc,thumbnail:thumb,categories:selCats,subCategories:selSubs,source:source||detectSource(url)})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4,opacity:title.trim()?1:0.4}}>추가</button></div></div>);}
+
+function NewsEditForm({initial,cats,onSubmit,onClose}){const[title,setTitle]=useState(initial.title||"");const[desc,setDesc]=useState(initial.description||"");const[thumb,setThumb]=useState(initial.thumbnail||"");const[selCats,setSelCats]=useState(initial.categories||[]);const[selSubs,setSelSubs]=useState(initial.subCategories||[]);const[source,setSource]=useState(initial.source||"");const toggleCat=(id)=>setSelCats((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);const toggleSub=(id)=>setSelSubs((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>뉴스 수정</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} style={fInput} /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="썸네일"><input value={thumb} onChange={(e)=>setThumb(e.target.value)} style={fInput} /></FField><FField label="카테고리"><div style={{display:"flex",flexDirection:"column",gap:6}}>{cats.map((c)=>(<div key={c.id}><button onClick={()=>toggleCat(c.id)} style={{padding:"4px 10px",borderRadius:4,fontSize:12,cursor:"pointer",background:selCats.includes(c.id)?c.color:"#F7F6F3",color:selCats.includes(c.id)?"#fff":"#6B6B6B",border:"none",fontFamily:"inherit",fontWeight:500}}>{c.name}</button>{selCats.includes(c.id)&&c.subs.length>0&&(<div style={{display:"flex",gap:4,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>{c.subs.map((s)=>(<button key={s.id} onClick={()=>toggleSub(s.id)} style={{padding:"2px 8px",borderRadius:3,fontSize:11,cursor:"pointer",background:selSubs.includes(s.id)?`${c.color}20`:"#F7F6F3",color:selSubs.includes(s.id)?c.color:"#9B9A97",border:selSubs.includes(s.id)?`1px solid ${c.color}44`:"1px solid transparent",fontFamily:"inherit"}}>{s.name}</button>))}</div>)}</div>))}</div></FField><FField label="출처"><input value={source} onChange={(e)=>setSource(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),description:desc,thumbnail:thumb,categories:selCats,subCategories:selSubs,source})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>수정</button></div></div>);}
+
+/* ═══ RENDER ═══ */
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(RootApp));
+</script>
+</body>
+</html>
