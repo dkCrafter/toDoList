@@ -126,10 +126,14 @@ function App() {
   const [catEdit, setCatEdit] = useState(null);
   const [sideExpanded, setSideExpanded] = useState([]);
   const saveRef = useRef(null);
+  const loadedRef = useRef(false);
+  const localSaveRef = useRef(false); // true when we just saved locally, skip next onSnapshot
 
   // Load from Firebase + listen for real-time updates
   useEffect(() => {
     const unsub = DOC_REF.onSnapshot((snap) => {
+      // Skip if this snapshot was triggered by our own save
+      if (localSaveRef.current) { localSaveRef.current = false; return; }
       if (snap.exists) {
         const d = snap.data();
         if (!d.taskCats) d.taskCats = DEFAULT_TASK_CATS;
@@ -138,31 +142,41 @@ function App() {
         d.newsCats = d.newsCats.map((c) => ({ ...c, subs: c.subs || [] }));
         setData(d);
         setSyncStatus("synced");
-      } else {
+        loadedRef.current = true;
+      } else if (!loadedRef.current) {
+        // Only use defaults if this is the very first load and no data exists
         setData(defaultData());
         setSyncStatus("synced");
+        loadedRef.current = true;
       }
       setLoading(false);
     }, (err) => {
       console.error("Firestore listen error:", err);
-      setData(defaultData());
+      // On error, only set defaults if we never loaded real data
+      if (!loadedRef.current) {
+        setData(defaultData());
+        loadedRef.current = true;
+      }
       setSyncStatus("error");
       setLoading(false);
     });
     return () => unsub();
   }, []);
 
-  // Save to Firebase (debounced)
+  // Save to Firebase (debounced) — only if we successfully loaded first
   const save = useCallback((d) => {
     setData(d);
+    if (!loadedRef.current) return; // don't save if we never loaded
     setSyncStatus("saving");
     clearTimeout(saveRef.current);
     saveRef.current = setTimeout(async () => {
       try {
+        localSaveRef.current = true;
         await fbSave(d);
         setSyncStatus("synced");
       } catch (e) {
         console.error("Save failed:", e);
+        localSaveRef.current = false;
         setSyncStatus("error");
       }
     }, 800);
