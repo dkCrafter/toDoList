@@ -159,6 +159,7 @@ function App() {
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const touchStartEdge = useRef(false);
+  const swipeLocked = useRef(false);
 
   // Load from Firebase + listen for real-time updates
   useEffect(() => {
@@ -280,20 +281,26 @@ function App() {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
     touchStartEdge.current = e.touches[0].clientX <= 22;
+    swipeLocked.current = false;
     setIsSliding(false);
   };
   const handleTouchMove = (e) => {
-    if (touchStartX.current === null || drawerOpen) return;
+    if (touchStartX.current === null || drawerOpen || swipeLocked.current) return;
     const dx = e.touches[0].clientX - touchStartX.current;
     const dy = e.touches[0].clientY - touchStartY.current;
-    if (Math.abs(dy) > Math.abs(dx) + 5) { touchStartX.current = null; return; }
-    // 엣지 스와이프: 드로어만 처리, 콘텐츠 이동 없음
-    if (touchStartEdge.current) return;
+    // 세로 이동이 더 크면 잠금
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) {
+      swipeLocked.current = true;
+      setSlideX(0);
+      return;
+    }
+    if (Math.abs(dx) < 4) return; // 미세 떨림 무시
+    if (touchStartEdge.current) return; // 엣지 스와이프는 드로어 전용
     const cur = NAV_ORDER.indexOf(view);
-    // 경계에서 저항감
-    const bounded = (cur === 0 && dx > 0) || (cur === NAV_ORDER.length-1 && dx < 0)
-      ? dx * 0.15
-      : Math.max(-window.innerWidth, Math.min(window.innerWidth, dx));
+    // 경계 저항감
+    const bounded = (cur === 0 && dx > 0) || (cur === NAV_ORDER.length - 1 && dx < 0)
+      ? dx * 0.12
+      : dx;
     setSlideX(bounded);
   };
   const handleTouchEnd = (e) => {
@@ -301,25 +308,29 @@ function App() {
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     // 엣지 드로어
-    if (touchStartEdge.current && dx > 55 && !drawerOpen) {
+    if (touchStartEdge.current && dx > 40 && !drawerOpen) {
       setDrawerOpen(true); setSlideX(0); touchStartX.current = null; return;
     }
-    if (drawerOpen && dx < -50) {
+    if (drawerOpen && dx < -40) {
       setDrawerOpen(false); setSlideX(0); touchStartX.current = null; return;
     }
-    if (Math.abs(dy) > Math.abs(dx)) { setSlideX(0); touchStartX.current = null; return; }
+    if (swipeLocked.current || Math.abs(dy) > Math.abs(dx)) {
+      setSlideX(0); touchStartX.current = null; return;
+    }
     const cur = NAV_ORDER.indexOf(view);
     const W = window.innerWidth;
     setIsSliding(true);
-    if (dx < -W * 0.25 && cur < NAV_ORDER.length - 1) {
+    // 임계값: 화면의 8% 또는 절대 30px 이상이면 전환
+    const threshold = Math.min(W * 0.08, 30);
+    if (dx < -threshold && cur < NAV_ORDER.length - 1) {
       setSlideX(-W);
-      setTimeout(() => { setView(NAV_ORDER[cur+1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 280);
-    } else if (dx > W * 0.25 && cur > 0) {
+      setTimeout(() => { setView(NAV_ORDER[cur+1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 180);
+    } else if (dx > threshold && cur > 0) {
       setSlideX(W);
-      setTimeout(() => { setView(NAV_ORDER[cur-1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 280);
+      setTimeout(() => { setView(NAV_ORDER[cur-1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 180);
     } else {
       setSlideX(0);
-      setTimeout(() => setIsSliding(false), 280);
+      setTimeout(() => setIsSliding(false), 180);
     }
     touchStartX.current = null;
   };
@@ -335,16 +346,23 @@ function App() {
         @keyframes fadeSlide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
         @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
-        .slide-wrap{overflow:hidden;position:relative}
-        .slide-inner{will-change:transform}
+        .slide-wrap{overflow:hidden;position:relative;width:100%}
+        .slide-inner{will-change:transform;min-height:1px}
         .row-h:hover{background:#FAFAFA}
         .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
-        @media(max-width:767px){.desk{display:none!important}.main-ml{margin-left:0!important}.ngrid{grid-template-columns:1fr!important}.row-h div{font-size:inherit}.main-ml h1{font-size:24px!important}.main-ml h3{font-size:15px!important}.main-ml p,.main-ml span,.main-ml div{font-size:inherit}}
+        @media(max-width:767px){
+          .desk{display:none!important}.main-ml{margin-left:0!important}
+          .ngrid{grid-template-columns:1fr!important}
+          .mob-font-root{font-size:var(--mob-fs,15px) !important}
+          .mob-font-root *{font-size:inherit !important}
+          .mob-font-root h1{font-size:calc(var(--mob-fs,15px) + 8px) !important}
+          .mob-font-root h2{font-size:calc(var(--mob-fs,15px) + 4px) !important}
+          .mob-font-root h3{font-size:calc(var(--mob-fs,15px) + 1px) !important}
+        }
         @media(min-width:768px){.mob{display:none!important}}
-        @media(max-width:767px){.mob-scale{font-size:15px!important}.mob-scale-sm{font-size:13px!important}}
       `}</style>
 
-      <div style={{display:"flex",minHeight:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#37352F"}} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+      <div style={{display:"flex",minHeight:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#37352F","--mob-fs":`${fontSize}px`}} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
 
         {/* DESKTOP SIDEBAR */}
         <aside className="desk" style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"#FBFBFA",borderRight:"1px solid #EFEFEF",padding:"20px 10px",overflowY:"auto",zIndex:40,display:"flex",flexDirection:"column"}}>
@@ -473,7 +491,7 @@ function App() {
           {!drawerOpen&&newsFilterLabel&&view==="news"&&(<div className="mob" style={{padding:"6px 16px",background:"#FBFBFA",borderBottom:"1px solid #EFEFEF",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:"#9B9A97"}}>필터:</span><span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:`${selectedMainCat?.color||"#37352F"}15`,color:selectedMainCat?.color||"#37352F"}}>{newsFilterLabel}</span><button onClick={()=>{setNewsMainFilter("all");setNewsSubFilter(null);}} style={{...linkBtn,fontSize:12,color:"#B4B4B0"}}>✕</button></div>)}
 
           <div className="slide-wrap">
-          <div className="slide-inner" style={{padding:"20px 20px",transform:`translateX(${slideX}px)`,transition:isSliding?`transform 0.28s cubic-bezier(0.4,0,0.2,1)`:"none",fontSize:fontSize}}>
+          <div className="slide-inner mob-font-root" style={{padding:"20px 20px",transform:`translateX(${slideX}px)`,transition:isSliding?`transform 0.18s cubic-bezier(0.25,0.46,0.45,0.94)`:"none"}}>
             {/* TASKS */}
             {view==="tasks"&&(<section style={{animation:"fadeUp 0.3s"}}>
               <div style={{maxWidth:800,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>TO DO</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div><button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button></div>
@@ -555,7 +573,7 @@ function App() {
         </nav>
 
         {/* MODALS */}
-        {modal&&(<div onClick={closeModal} style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.25)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div onClick={(e)=>e.stopPropagation()} style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,maxHeight:"88vh",overflow:"auto",animation:"slideUp 0.25s",boxShadow:"0 -8px 32px rgba(0,0,0,0.1)"}}>
+        {modal&&(<div onMouseDown={(e)=>{if(e.target===e.currentTarget)closeModal();}} style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.25)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div onMouseDown={(e)=>e.stopPropagation()} style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,maxHeight:"88vh",overflow:"auto",animation:"slideUp 0.25s",boxShadow:"0 -8px 32px rgba(0,0,0,0.1)"}}>
           {modal==="task"&&<TaskForm initial={editItem} cats={data.taskCats} onSubmit={(t)=>{editItem?updTask(editItem.id,t):addTask(t);closeModal();}} onClose={closeModal} />}
           {modal==="news"&&<NewsForm cats={data.newsCats} onSubmit={(n)=>{addNews(n);closeModal();}} onClose={closeModal} />}
           {modal==="news-edit"&&editItem&&<NewsEditForm initial={editItem} cats={data.newsCats} onSubmit={(u)=>{updNews(editItem.id,u);closeModal();}} onClose={closeModal} />}
