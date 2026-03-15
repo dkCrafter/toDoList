@@ -150,7 +150,9 @@ function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [catEdit, setCatEdit] = useState(null);
   const [sideExpanded, setSideExpanded] = useState([]);
-  const [swipeDir, setSwipeDir] = useState(null); // "left" | "right" | null
+  const [fontSize, setFontSize] = useState(15); // 모바일 폰트 크기
+  const [slideX, setSlideX] = useState(0);       // 현재 드래그 offset px
+  const [isSliding, setIsSliding] = useState(false); // transition 재생 중
   const saveRef = useRef(null);
   const loadedRef = useRef(false);
   const localSaveRef = useRef(false);
@@ -271,36 +273,53 @@ function App() {
   const newsFilterLabel=newsSubFilter?(()=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===newsSubFilter));return`${p?.name} › ${p?.subs.find((s)=>s.id===newsSubFilter)?.name}`;})():newsMainFilter!=="all"?selectedMainCat?.name:null;
   const catType=view==="tasks"?"task":"news";
 
-  // 스와이프 핸들러
+  // 스와이프 핸들러 — 실시간 드래그 슬라이드
   const NAV_ORDER = ["tasks","news","reminders"];
-  const changeView = (nextView, dir) => {
-    setSwipeDir(dir);
-    setTimeout(() => {
-      setView(nextView);
-      setSearch("");
-      setFilterOpen(false);
-      setSwipeDir(null);
-    }, 260);
-  };
   const handleTouchStart = (e) => {
+    if (drawerOpen) return;
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
     touchStartEdge.current = e.touches[0].clientX <= 22;
+    setIsSliding(false);
+  };
+  const handleTouchMove = (e) => {
+    if (touchStartX.current === null || drawerOpen) return;
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = e.touches[0].clientY - touchStartY.current;
+    if (Math.abs(dy) > Math.abs(dx) + 5) { touchStartX.current = null; return; }
+    // 엣지 스와이프: 드로어만 처리, 콘텐츠 이동 없음
+    if (touchStartEdge.current) return;
+    const cur = NAV_ORDER.indexOf(view);
+    // 경계에서 저항감
+    const bounded = (cur === 0 && dx > 0) || (cur === NAV_ORDER.length-1 && dx < 0)
+      ? dx * 0.15
+      : Math.max(-window.innerWidth, Math.min(window.innerWidth, dx));
+    setSlideX(bounded);
   };
   const handleTouchEnd = (e) => {
     if (touchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (Math.abs(dy) > Math.abs(dx)) { touchStartX.current = null; return; }
-    // 엣지 스와이프: 드로어 열기
-    if (touchStartEdge.current && dx > 55 && !drawerOpen) { setDrawerOpen(true); touchStartX.current = null; return; }
-    // 드로어 열린 상태에서 왼쪽 스와이프: 닫기
-    if (drawerOpen && dx < -50) { setDrawerOpen(false); touchStartX.current = null; return; }
-    // 탭 전환 스와이프 (드로어 닫혀있을 때만)
-    if (!drawerOpen && Math.abs(dx) >= 50) {
-      const cur = NAV_ORDER.indexOf(view);
-      if (dx < 0 && cur < NAV_ORDER.length - 1) changeView(NAV_ORDER[cur+1], "left");
-      if (dx > 0 && cur > 0) changeView(NAV_ORDER[cur-1], "right");
+    // 엣지 드로어
+    if (touchStartEdge.current && dx > 55 && !drawerOpen) {
+      setDrawerOpen(true); setSlideX(0); touchStartX.current = null; return;
+    }
+    if (drawerOpen && dx < -50) {
+      setDrawerOpen(false); setSlideX(0); touchStartX.current = null; return;
+    }
+    if (Math.abs(dy) > Math.abs(dx)) { setSlideX(0); touchStartX.current = null; return; }
+    const cur = NAV_ORDER.indexOf(view);
+    const W = window.innerWidth;
+    setIsSliding(true);
+    if (dx < -W * 0.25 && cur < NAV_ORDER.length - 1) {
+      setSlideX(-W);
+      setTimeout(() => { setView(NAV_ORDER[cur+1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 280);
+    } else if (dx > W * 0.25 && cur > 0) {
+      setSlideX(W);
+      setTimeout(() => { setView(NAV_ORDER[cur-1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 280);
+    } else {
+      setSlideX(0);
+      setTimeout(() => setIsSliding(false), 280);
     }
     touchStartX.current = null;
   };
@@ -316,14 +335,8 @@ function App() {
         @keyframes fadeSlide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
         @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes swipeOutLeft{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(-28%)}}
-        @keyframes swipeOutRight{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(28%)}}
-        @keyframes swipeInRight{from{opacity:0;transform:translateX(28%)}to{opacity:1;transform:translateX(0)}}
-        @keyframes swipeInLeft{from{opacity:0;transform:translateX(-28%)}to{opacity:1;transform:translateX(0)}}
-        .swipe-out-left{animation:swipeOutLeft 0.26s ease forwards}
-        .swipe-out-right{animation:swipeOutRight 0.26s ease forwards}
-        .swipe-in-right{animation:swipeInRight 0.26s ease forwards}
-        .swipe-in-left{animation:swipeInLeft 0.26s ease forwards}
+        .slide-wrap{overflow:hidden;position:relative}
+        .slide-inner{will-change:transform}
         .row-h:hover{background:#FAFAFA}
         .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
         @media(max-width:767px){.desk{display:none!important}.main-ml{margin-left:0!important}.ngrid{grid-template-columns:1fr!important}.row-h div{font-size:inherit}.main-ml h1{font-size:24px!important}.main-ml h3{font-size:15px!important}.main-ml p,.main-ml span,.main-ml div{font-size:inherit}}
@@ -331,7 +344,7 @@ function App() {
         @media(max-width:767px){.mob-scale{font-size:15px!important}.mob-scale-sm{font-size:13px!important}}
       `}</style>
 
-      <div style={{display:"flex",minHeight:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#37352F"}} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      <div style={{display:"flex",minHeight:"100vh",fontFamily:"'Noto Sans KR',sans-serif",color:"#37352F"}} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
 
         {/* DESKTOP SIDEBAR */}
         <aside className="desk" style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"#FBFBFA",borderRight:"1px solid #EFEFEF",padding:"20px 10px",overflowY:"auto",zIndex:40,display:"flex",flexDirection:"column"}}>
@@ -390,7 +403,11 @@ function App() {
         <main className="main-ml" style={{flex:1,marginLeft:220,minHeight:"100vh",paddingBottom:80}}>
           <div style={{position:"sticky",top:0,zIndex:30,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F0F0EE",padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
             <div style={{position:"relative",flex:"0 1 300px"}}><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="검색..." style={{...inputSt,paddingLeft:30,width:"100%"}} /><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"#B4B4B0"}}>⌕</span></div>
-            <button className="mob" onClick={()=>setDrawerOpen(!drawerOpen)} style={{background:drawerOpen?"#37352F":"#F7F6F3",border:"none",borderRadius:6,padding:"7px 10px",fontSize:12,cursor:"pointer",color:drawerOpen?"#fff":"#6B6B6B",fontWeight:500,fontFamily:"inherit"}}>{drawerOpen?"✕ 닫기":"필터"}</button>
+            <button className="mob" onClick={()=>setDrawerOpen(!drawerOpen)} style={{background:drawerOpen?"#37352F":"#F7F6F3",border:"none",borderRadius:6,padding:"7px 9px",cursor:"pointer",color:drawerOpen?"#fff":"#6B6B6B",display:"flex",flexDirection:"column",gap:"4px",alignItems:"center",justifyContent:"center",width:36,height:34}}>
+              <span style={{display:"block",width:16,height:2,borderRadius:1,background:drawerOpen?"#fff":"#6B6B6B",transition:"background 0.2s"}} />
+              <span style={{display:"block",width:16,height:2,borderRadius:1,background:drawerOpen?"#fff":"#6B6B6B",transition:"background 0.2s"}} />
+              <span style={{display:"block",width:16,height:2,borderRadius:1,background:drawerOpen?"#fff":"#6B6B6B",transition:"background 0.2s"}} />
+            </button>
             <div style={{flex:1}} />
             <span className="mob"><SyncBadge status={syncStatus} /></span>
             {reminders>0&&view!=="reminders"&&<button className="desk" onClick={()=>setView("reminders")} style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:"#DC2626",cursor:"pointer",fontFamily:"inherit"}}>⏰ {reminders}</button>}
@@ -436,12 +453,27 @@ function App() {
                 })}
               </div>
             )}
+            {/* 폰트 크기 조절 */}
+            <div style={{borderTop:"1px solid #EFEFEF",padding:"12px 14px",marginTop:4}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#B4B4B0",marginBottom:8,letterSpacing:0.4}}>폰트 크기</div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <button onClick={()=>setFontSize(f=>Math.max(12,f-1))} style={{width:28,height:28,borderRadius:6,border:"1px solid #EFEFEF",background:"#F7F6F3",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit",color:"#37352F"}}>－</button>
+                <div style={{flex:1,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:10,color:"#B4B4B0",width:14,textAlign:"center"}}>가</span>
+                  <input type="range" min={12} max={20} value={fontSize} onChange={e=>setFontSize(Number(e.target.value))} style={{flex:1,accentColor:"#56B4E8",cursor:"pointer"}} />
+                  <span style={{fontSize:16,color:"#37352F",width:14,textAlign:"center",fontWeight:500}}>가</span>
+                </div>
+                <button onClick={()=>setFontSize(f=>Math.min(20,f+1))} style={{width:28,height:28,borderRadius:6,border:"1px solid #EFEFEF",background:"#F7F6F3",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit",color:"#37352F"}}>＋</button>
+              </div>
+              <div style={{textAlign:"center",fontSize:10,color:"#B4B4B0",marginTop:4}}>{fontSize}px</div>
+            </div>
           </div>
 
           {/* 필터 라벨 (드로어 닫혔을 때 선택된 필터 표시) */}
           {!drawerOpen&&newsFilterLabel&&view==="news"&&(<div className="mob" style={{padding:"6px 16px",background:"#FBFBFA",borderBottom:"1px solid #EFEFEF",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:"#9B9A97"}}>필터:</span><span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:`${selectedMainCat?.color||"#37352F"}15`,color:selectedMainCat?.color||"#37352F"}}>{newsFilterLabel}</span><button onClick={()=>{setNewsMainFilter("all");setNewsSubFilter(null);}} style={{...linkBtn,fontSize:12,color:"#B4B4B0"}}>✕</button></div>)}
 
-          <div style={{padding:"20px 20px"}} className={swipeDir==="left"?"swipe-out-left":swipeDir==="right"?"swipe-out-right":"swipe-in-right"}>
+          <div className="slide-wrap">
+          <div className="slide-inner" style={{padding:"20px 20px",transform:`translateX(${slideX}px)`,transition:isSliding?`transform 0.28s cubic-bezier(0.4,0,0.2,1)`:"none",fontSize:fontSize}}>
             {/* TASKS */}
             {view==="tasks"&&(<section style={{animation:"fadeUp 0.3s"}}>
               <div style={{maxWidth:800,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>TO DO</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div><button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button></div>
@@ -513,7 +545,8 @@ function App() {
                 </React.Fragment>
               )}
             </section>)}
-          </div>
+          </div>{/* slide-inner */}
+          </div>{/* slide-wrap */}
         </main>
 
         {/* MOBILE BOTTOM TAB */}
