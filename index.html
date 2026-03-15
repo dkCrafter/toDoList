@@ -194,6 +194,8 @@ function App() {
   const changeView = (v) => { sessionStorage.setItem("dkhub_view", v); setView(v); };
   const [taskFilter, setTaskFilter] = useState("all");
   const [taskTab, setTaskTab] = useState("active");
+  const [taskGroup, setTaskGroup] = useState(() => sessionStorage.getItem("dkhub_tg") || "personal"); // 모바일 탭: personal|work
+  const [taskTabWork, setTaskTabWork] = useState("active"); // 회사 컬럼 진행중/완료
   const [newsMainFilter, setNewsMainFilter] = useState("all");
   const [newsSubFilter, setNewsSubFilter] = useState(null);
   const [search, setSearch] = useState("");
@@ -295,7 +297,30 @@ function App() {
   const staleN = data.news.filter((n) => !n.read && daysAgo(n.lastChecked||n.createdAt) >= STALE);
   const reminders = staleT.length + staleN.length;
   const activeNewsFilter = newsSubFilter || newsMainFilter;
-  const filteredTasks = data.tasks.filter((t)=>(taskTab==="active"?!t.done:t.done)).filter((t)=>taskFilter==="all"||t.category===taskFilter).filter((t)=>!search||`${t.title} ${t.desc||""}`.toLowerCase().includes(search.toLowerCase()));
+  // 개인: personal 카테고리, 회사: work/team/plan 카테고리 (나머지 카테고리는 회사로)
+  const PERSONAL_CATS = ["personal"];
+  const isPersonalTask = (t) => {
+    const cat = data.taskCats.find(c => c.id === t.category);
+    return !t.category || PERSONAL_CATS.includes(t.category);
+  };
+  const isWorkTask = (t) => !isPersonalTask(t);
+
+  const filteredTasks = data.tasks
+    .filter((t)=>(taskTab==="active"?!t.done:t.done))
+    .filter((t)=>taskFilter==="all"||t.category===taskFilter)
+    .filter((t)=>!search||`${t.title} ${t.desc||""}`.toLowerCase().includes(search.toLowerCase()));
+
+  // 개인 컬럼용
+  const filteredPersonal = data.tasks
+    .filter(isPersonalTask)
+    .filter((t)=>(taskTab==="active"?!t.done:t.done))
+    .filter((t)=>!search||`${t.title} ${t.desc||""}`.toLowerCase().includes(search.toLowerCase()));
+
+  // 회사 컬럼용
+  const filteredWork = data.tasks
+    .filter(isWorkTask)
+    .filter((t)=>(taskTabWork==="active"?!t.done:t.done))
+    .filter((t)=>!search||`${t.title} ${t.desc||""}`.toLowerCase().includes(search.toLowerCase()));
   const filteredNews = data.news
     .filter((n)=>newsMatchesFilter(n,activeNewsFilter,data.newsCats))
     .filter((n)=>!search||`${n.title} ${n.description||""}`.toLowerCase().includes(search.toLowerCase()))
@@ -407,6 +432,20 @@ function App() {
         .row-h:hover{background:#FAFAFA}
         .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
         .card-pinned{transition:box-shadow 0.2s,transform 0.2s}.card-pinned:hover{box-shadow:0 6px 20px rgba(245,158,11,0.18);transform:translateY(-2px)}
+        /* PC: 2컬럼 나란히 */
+        @media(min-width:768px){
+          .task-cols{display:flex;gap:0;align-items:flex-start}
+          .task-col-show{flex:1;display:block}
+          .task-col-hide{flex:1;display:block}
+          .task-divider{display:block!important}
+        }
+        /* 모바일: 탭 선택에 따라 show/hide */
+        @media(max-width:767px){
+          .task-cols{display:block}
+          .task-col-show{display:block}
+          .task-col-hide{display:none}
+          .task-divider{display:none!important}
+        }
         @media(max-width:767px){
           .desk{display:none!important}.main-ml{margin-left:0!important}
           .ngrid{grid-template-columns:1fr!important}
@@ -551,31 +590,124 @@ function App() {
           <div className="slide-inner mob-font-root" style={{padding:"20px 20px",transform:`translateX(${slideX}px)`,transition:isSliding?`transform 0.18s cubic-bezier(0.25,0.46,0.45,0.94)`:"none"}}>
             {/* TASKS */}
             {view==="tasks"&&(<section style={{animation:"fadeUp 0.3s"}}>
-              <div style={{maxWidth:800,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>TO DO</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div><button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button></div>
-              <div style={{display:"flex",gap:12,marginBottom:12,borderBottom:"1px solid #EFEFEF",paddingBottom:6}}>{["active","done"].map((t)=>(<button key={t} onClick={()=>setTaskTab(t)} style={{...tabBtn,color:taskTab===t?"#37352F":"#B4B4B0",fontWeight:taskTab===t?600:400,borderBottom:taskTab===t?"2px solid #37352F":"2px solid transparent"}}>{t==="active"?"진행 중":"완료"}</button>))}</div>
-              {filteredTasks.length===0?<Empty icon="📝" msg={taskTab==="active"?"할 일을 추가해보세요":"완료된 항목 없음"} />:
-                filteredTasks.map((t,i)=>{const cat=data.taskCats.find((c)=>c.id===t.category);const stale=!t.done&&daysAgo(t.lastChecked||t.createdAt)>=STALE;return(
-                  <div key={t.id} className="row-h" style={{padding:"10px 4px",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"flex-start",gap:10,background:stale?"#FFFBFA":"transparent",borderLeft:stale?"3px solid #EB5757":"3px solid transparent",paddingLeft:stale?10:4,animation:`fadeUp 0.25s ease ${i*0.02}s both`,maxWidth:800}}>
-                    <button onClick={()=>updTask(t.id,{done:!t.done,lastChecked:Date.now()})} style={{width:18,height:18,borderRadius:3,flexShrink:0,marginTop:1,border:`1.5px solid ${t.done?(cat?.color||"#37352F"):"#D3D1CB"}`,background:t.done?(cat?.color||"#37352F"):"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{t.done&&<span style={{color:"#fff",fontSize:10,fontWeight:800}}>✓</span>}</button>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13.5,fontWeight:500,color:t.done?"#B4B4B0":"#37352F",textDecoration:t.done?"line-through":"none"}}>{t.title}</div>
-                      {t.desc&&<div style={{fontSize:12,color:"#9B9A97",marginTop:2,lineHeight:1.4,whiteSpace:"pre-wrap"}}>{t.desc}</div>}
-                      <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap",alignItems:"center"}}>
-                        {cat&&<Tag label={cat.name} color={cat.color} />}
-                        <span style={{fontSize:10,color:stale?"#EB5757":"#B4B4B0"}}>{fmtDate(t.createdAt)}</span>
-                        {t.dueDate&&<span style={{fontSize:10,color:!t.done&&daysAgo(t.dueDate)>0?"#EB5757":"#9B9A97"}}>마감 {fmtDate(t.dueDate)}</span>}
-                        {stale&&<span style={{fontSize:9,fontWeight:700,color:"#EB5757"}}>미확인 {daysAgo(t.lastChecked||t.createdAt)}일</span>}
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:2,flexShrink:0}}>
-                      {stale&&<Mini onClick={()=>updTask(t.id,{lastChecked:Date.now()})} c="#27AE60">✓</Mini>}
-                      <Mini onClick={()=>openModal("task",t)}>✎</Mini>
-                      <Mini onClick={()=>delTask(t.id)}>✕</Mini>
+              {/* 헤더 */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                <div>
+                  <h1 style={{fontSize:22,fontWeight:700}}>TO DO</h1>
+                  <p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>
+                    진행 중 {data.tasks.filter(t=>!t.done).length} · 완료 {data.tasks.filter(t=>t.done).length}
+                  </p>
+                </div>
+                <button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button>
+              </div>
+
+              {/* 모바일 전용 — 개인/회사 탭 */}
+              <div className="mob" style={{display:"flex",gap:0,marginBottom:14,borderRadius:8,overflow:"hidden",border:"1px solid #EFEFEF",background:"#F7F6F3"}}>
+                {[{id:"personal",label:"👤 개인",color:"#EB5757"},{id:"work",label:"🏢 회사",color:"#2F80ED"}].map(g=>(
+                  <button key={g.id} onClick={()=>{setTaskGroup(g.id);sessionStorage.setItem("dkhub_tg",g.id);}}
+                    style={{flex:1,padding:"9px 0",border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:taskGroup===g.id?700:400,
+                      background:taskGroup===g.id?"#fff":"transparent",
+                      color:taskGroup===g.id?g.color:"#9B9A97",
+                      boxShadow:taskGroup===g.id?"0 1px 4px rgba(0,0,0,0.08)":"none",
+                      transition:"all 0.15s",borderRadius:7}}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* PC: 2컬럼 / 모바일: 선택된 컬럼만 */}
+              <div className="task-cols">
+
+                {/* ── 개인 컬럼 ── */}
+                <div className={taskGroup==="personal"?"task-col-show":"task-col-hide"} style={{minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,paddingBottom:8,borderBottom:"2px solid #EB575720"}}>
+                    <span style={{fontSize:14,fontWeight:700,color:"#EB5757"}}>👤 개인</span>
+                    <div style={{display:"flex",gap:10}}>
+                      {["active","done"].map(t=>(
+                        <button key={t} onClick={()=>setTaskTab(t)}
+                          style={{...tabBtn,fontSize:12,color:taskTab===t?"#37352F":"#B4B4B0",fontWeight:taskTab===t?600:400,borderBottom:taskTab===t?"2px solid #EB5757":"2px solid transparent",paddingBottom:3}}>
+                          {t==="active"?"진행 중":"완료"}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                );})
-              }
-              <button onClick={()=>openModal("task")} style={{...linkBtn,padding:"10px 4px",fontSize:12.5,color:"#B4B4B0"}}>+ 새 할 일</button>
+                  {filteredPersonal.length===0
+                    ?<Empty icon="✅" msg={taskTab==="active"?"개인 할 일을 추가해보세요":"완료된 항목 없음"} />
+                    :filteredPersonal.map((t,i)=>{
+                      const cat=data.taskCats.find(c=>c.id===t.category);
+                      const stale=!t.done&&daysAgo(t.lastChecked||t.createdAt)>=STALE;
+                      return(
+                        <div key={t.id} className="row-h" style={{padding:"10px 4px",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"flex-start",gap:10,background:stale?"#FFFBFA":"transparent",borderLeft:stale?"3px solid #EB5757":"3px solid transparent",paddingLeft:stale?10:4,animation:`fadeUp 0.25s ease ${i*0.02}s both`}}>
+                          <button onClick={()=>updTask(t.id,{done:!t.done,lastChecked:Date.now()})} style={{width:18,height:18,borderRadius:3,flexShrink:0,marginTop:1,border:`1.5px solid ${t.done?(cat?.color||"#EB5757"):"#D3D1CB"}`,background:t.done?(cat?.color||"#EB5757"):"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{t.done&&<span style={{color:"#fff",fontSize:10,fontWeight:800}}>✓</span>}</button>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13.5,fontWeight:500,color:t.done?"#B4B4B0":"#37352F",textDecoration:t.done?"line-through":"none"}}>{t.title}</div>
+                            {t.desc&&<div style={{fontSize:12,color:"#9B9A97",marginTop:2,lineHeight:1.4,whiteSpace:"pre-wrap"}}>{t.desc}</div>}
+                            <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap",alignItems:"center"}}>
+                              {cat&&<Tag label={cat.name} color={cat.color} />}
+                              <span style={{fontSize:10,color:stale?"#EB5757":"#B4B4B0"}}>{fmtDate(t.createdAt)}</span>
+                              {t.dueDate&&<span style={{fontSize:10,color:!t.done&&daysAgo(t.dueDate)>0?"#EB5757":"#9B9A97"}}>마감 {fmtDate(t.dueDate)}</span>}
+                              {stale&&<span style={{fontSize:9,fontWeight:700,color:"#EB5757"}}>미확인 {daysAgo(t.lastChecked||t.createdAt)}일</span>}
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:2,flexShrink:0}}>
+                            {stale&&<Mini onClick={()=>updTask(t.id,{lastChecked:Date.now()})} c="#27AE60">✓</Mini>}
+                            <Mini onClick={()=>openModal("task",t)}>✎</Mini>
+                            <Mini onClick={()=>delTask(t.id)}>✕</Mini>
+                          </div>
+                        </div>
+                      );
+                    })
+                  }
+                  <button onClick={()=>openModal("task")} style={{...linkBtn,padding:"10px 4px",fontSize:12.5,color:"#B4B4B0"}}>+ 새 할 일</button>
+                </div>
+
+                {/* 구분선 (PC 전용) */}
+                <div className="desk task-divider" style={{width:1,background:"#EFEFEF",margin:"0 4px",flexShrink:0}} />
+
+                {/* ── 회사 컬럼 ── */}
+                <div className={taskGroup==="work"?"task-col-show":"task-col-hide"} style={{minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,paddingBottom:8,borderBottom:"2px solid #2F80ED20"}}>
+                    <span style={{fontSize:14,fontWeight:700,color:"#2F80ED"}}>🏢 회사</span>
+                    <div style={{display:"flex",gap:10}}>
+                      {["active","done"].map(t=>(
+                        <button key={t} onClick={()=>setTaskTabWork(t)}
+                          style={{...tabBtn,fontSize:12,color:taskTabWork===t?"#37352F":"#B4B4B0",fontWeight:taskTabWork===t?600:400,borderBottom:taskTabWork===t?"2px solid #2F80ED":"2px solid transparent",paddingBottom:3}}>
+                          {t==="active"?"진행 중":"완료"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {filteredWork.length===0
+                    ?<Empty icon="💼" msg={taskTabWork==="active"?"회사 할 일을 추가해보세요":"완료된 항목 없음"} />
+                    :filteredWork.map((t,i)=>{
+                      const cat=data.taskCats.find(c=>c.id===t.category);
+                      const stale=!t.done&&daysAgo(t.lastChecked||t.createdAt)>=STALE;
+                      return(
+                        <div key={t.id} className="row-h" style={{padding:"10px 4px",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"flex-start",gap:10,background:stale?"#FFFBFA":"transparent",borderLeft:stale?"3px solid #2F80ED":"3px solid transparent",paddingLeft:stale?10:4,animation:`fadeUp 0.25s ease ${i*0.02}s both`}}>
+                          <button onClick={()=>updTask(t.id,{done:!t.done,lastChecked:Date.now()})} style={{width:18,height:18,borderRadius:3,flexShrink:0,marginTop:1,border:`1.5px solid ${t.done?(cat?.color||"#2F80ED"):"#D3D1CB"}`,background:t.done?(cat?.color||"#2F80ED"):"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{t.done&&<span style={{color:"#fff",fontSize:10,fontWeight:800}}>✓</span>}</button>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13.5,fontWeight:500,color:t.done?"#B4B4B0":"#37352F",textDecoration:t.done?"line-through":"none"}}>{t.title}</div>
+                            {t.desc&&<div style={{fontSize:12,color:"#9B9A97",marginTop:2,lineHeight:1.4,whiteSpace:"pre-wrap"}}>{t.desc}</div>}
+                            <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap",alignItems:"center"}}>
+                              {cat&&<Tag label={cat.name} color={cat.color} />}
+                              <span style={{fontSize:10,color:stale?"#EB5757":"#B4B4B0"}}>{fmtDate(t.createdAt)}</span>
+                              {t.dueDate&&<span style={{fontSize:10,color:!t.done&&daysAgo(t.dueDate)>0?"#EB5757":"#9B9A97"}}>마감 {fmtDate(t.dueDate)}</span>}
+                              {stale&&<span style={{fontSize:9,fontWeight:700,color:"#EB5757"}}>미확인 {daysAgo(t.lastChecked||t.createdAt)}일</span>}
+                            </div>
+                          </div>
+                          <div style={{display:"flex",gap:2,flexShrink:0}}>
+                            {stale&&<Mini onClick={()=>updTask(t.id,{lastChecked:Date.now()})} c="#27AE60">✓</Mini>}
+                            <Mini onClick={()=>openModal("task",t)}>✎</Mini>
+                            <Mini onClick={()=>delTask(t.id)}>✕</Mini>
+                          </div>
+                        </div>
+                      );
+                    })
+                  }
+                  <button onClick={()=>openModal("task")} style={{...linkBtn,padding:"10px 4px",fontSize:12.5,color:"#B4B4B0"}}>+ 새 할 일</button>
+                </div>
+
+              </div>
             </section>)}
 
             {/* NEWS */}
@@ -691,7 +823,7 @@ function App() {
 
         {/* MODALS */}
         {modal&&(<div onMouseDown={(e)=>{if(e.target===e.currentTarget)closeModal();}} style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.25)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}><div onMouseDown={(e)=>e.stopPropagation()} style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:520,maxHeight:"88vh",overflow:"auto",animation:"slideUp 0.25s",boxShadow:"0 -8px 32px rgba(0,0,0,0.1)"}}>
-          {modal==="task"&&<TaskForm initial={editItem} cats={data.taskCats} onSubmit={(t)=>{editItem?updTask(editItem.id,t):addTask(t);closeModal();}} onClose={closeModal} />}
+          {modal==="task"&&<TaskForm initial={editItem} cats={data.taskCats} defaultGroup={taskGroup} onSubmit={(t)=>{editItem?updTask(editItem.id,t):addTask(t);closeModal();}} onClose={closeModal} />}
           {modal==="news"&&<NewsForm cats={data.newsCats} onSubmit={(n)=>{addNews(n);closeModal();}} onClose={closeModal} />}
           {modal==="news-edit"&&editItem&&<NewsEditForm initial={editItem} cats={data.newsCats} onSubmit={(u)=>{updNews(editItem.id,u);closeModal();}} onClose={closeModal} />}
         </div></div>)}
@@ -724,7 +856,20 @@ const tabBtn={background:"none",border:"none",cursor:"pointer",fontSize:12.5,pad
 const FField=({label,children})=>(<div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"#9B9A97",marginBottom:4}}>{label}</label>{children}</div>);
 const fInput={...inputSt,width:"100%"};
 
-function TaskForm({initial,cats,onSubmit,onClose}){const[title,setTitle]=useState(initial?.title||"");const[desc,setDesc]=useState(initial?.desc||"");const[cat,setCat]=useState(initial?.category||cats[0]?.id||"");const[pri,setPri]=useState(initial?.priority||"medium");const[due,setDue]=useState(initial?.dueDate?new Date(initial.dueDate).toISOString().split("T")[0]:"");return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>{initial?"할 일 수정":"새 할 일"}</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="할 일 입력" style={fInput} autoFocus /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="상세 (선택)" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="분류"><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{cats.map((c)=>(<button key={c.id} onClick={()=>setCat(c.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:cat===c.id?c.color:"#F7F6F3",color:cat===c.id?"#fff":"#6B6B6B",border:"none",fontWeight:500,fontFamily:"inherit"}}>{c.name}</button>))}</div></FField><FField label="우선순위"><div style={{display:"flex",gap:4}}>{PRIORITIES.map((p)=>(<button key={p.id} onClick={()=>setPri(p.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:pri===p.id?`${p.color}20`:"#F7F6F3",color:pri===p.id?p.color:"#6B6B6B",border:pri===p.id?`1.5px solid ${p.color}`:"1.5px solid transparent",fontFamily:"inherit"}}>{p.name}</button>))}</div></FField><FField label="마감일"><input type="date" value={due} onChange={(e)=>setDue(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),desc,category:cat,priority:pri,dueDate:due?new Date(due).getTime():null})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>{initial?"수정":"추가"}</button></div></div>);}
+function TaskForm({initial,cats,defaultGroup,onSubmit,onClose}){
+  // 신규 추가 시: 현재 탭(개인/회사)에 맞는 카테고리 기본 선택
+  const defaultCat = initial?.category || (
+    defaultGroup==="personal"
+      ? (cats.find(c=>c.id==="personal")?.id || cats[0]?.id)
+      : (cats.find(c=>c.id==="work")?.id || cats[0]?.id)
+  );
+  const[title,setTitle]=useState(initial?.title||"");
+  const[desc,setDesc]=useState(initial?.desc||"");
+  const[cat,setCat]=useState(defaultCat||"");
+  const[pri,setPri]=useState(initial?.priority||"medium");
+  const[due,setDue]=useState(initial?.dueDate?new Date(initial.dueDate).toISOString().split("T")[0]:"");
+  return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>{initial?"할 일 수정":"새 할 일"}</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="할 일 입력" style={fInput} autoFocus /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="상세 (선택)" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="분류"><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{cats.map((c)=>(<button key={c.id} onClick={()=>setCat(c.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:cat===c.id?c.color:"#F7F6F3",color:cat===c.id?"#fff":"#6B6B6B",border:"none",fontWeight:500,fontFamily:"inherit"}}>{c.name}</button>))}</div></FField><FField label="우선순위"><div style={{display:"flex",gap:4}}>{PRIORITIES.map((p)=>(<button key={p.id} onClick={()=>setPri(p.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:pri===p.id?`${p.color}20`:"#F7F6F3",color:pri===p.id?p.color:"#6B6B6B",border:pri===p.id?`1.5px solid ${p.color}`:"1.5px solid transparent",fontFamily:"inherit"}}>{p.name}</button>))}</div></FField><FField label="마감일"><input type="date" value={due} onChange={(e)=>setDue(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),desc,category:cat,priority:pri,dueDate:due?new Date(due).getTime():null})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>{initial?"수정":"추가"}</button></div></div>);
+}
 
 /* ═══ OG SCRAPER ═══ */
 // OG 메타 파싱 헬퍼
