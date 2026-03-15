@@ -675,45 +675,90 @@ const fInput={...inputSt,width:"100%"};
 function TaskForm({initial,cats,onSubmit,onClose}){const[title,setTitle]=useState(initial?.title||"");const[desc,setDesc]=useState(initial?.desc||"");const[cat,setCat]=useState(initial?.category||cats[0]?.id||"");const[pri,setPri]=useState(initial?.priority||"medium");const[due,setDue]=useState(initial?.dueDate?new Date(initial.dueDate).toISOString().split("T")[0]:"");return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>{initial?"할 일 수정":"새 할 일"}</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="할 일 입력" style={fInput} autoFocus /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="상세 (선택)" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="분류"><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{cats.map((c)=>(<button key={c.id} onClick={()=>setCat(c.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:cat===c.id?c.color:"#F7F6F3",color:cat===c.id?"#fff":"#6B6B6B",border:"none",fontWeight:500,fontFamily:"inherit"}}>{c.name}</button>))}</div></FField><FField label="우선순위"><div style={{display:"flex",gap:4}}>{PRIORITIES.map((p)=>(<button key={p.id} onClick={()=>setPri(p.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:pri===p.id?`${p.color}20`:"#F7F6F3",color:pri===p.id?p.color:"#6B6B6B",border:pri===p.id?`1.5px solid ${p.color}`:"1.5px solid transparent",fontFamily:"inherit"}}>{p.name}</button>))}</div></FField><FField label="마감일"><input type="date" value={due} onChange={(e)=>setDue(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),desc,category:cat,priority:pri,dueDate:due?new Date(due).getTime():null})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>{initial?"수정":"추가"}</button></div></div>);}
 
 /* ═══ OG SCRAPER ═══ */
-async function fetchOgMeta(url) {
-  // 1순위: allorigins (가장 안정적)
-  // 2순위: corsproxy.io
-  const proxies = [
-    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  ];
-  let html = "";
-  for (const proxy of proxies) {
-    try {
-      const res = await fetch(proxy, { signal: AbortSignal.timeout(7000) });
-      if (!res.ok) continue;
-      const data = await res.json().catch(() => null);
-      html = data ? (data.contents || "") : await res.text();
-      if (html.length > 100) break;
-    } catch(e) { continue; }
-  }
-  if (!html) return null;
+// OG 메타 파싱 헬퍼
+function parseOgFromHtml(html, url) {
   const getOg = (prop) => {
-    const m = html.match(new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]+content=["']([^"']+)["']`, "i"))
-               || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:${prop}["']`, "i"))
-               || html.match(new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content=["']([^"']+)["']`, "i"));
-    return m ? m[1].replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim() : "";
+    const patterns = [
+      new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]+content=["']([^"']{1,500})["']`,"i"),
+      new RegExp(`<meta[^>]+content=["']([^"']{1,500})["'][^>]+property=["']og:${prop}["']`,"i"),
+      new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content=["']([^"']{1,500})["']`,"i"),
+      new RegExp(`<meta[^>]+content=["']([^"']{1,500})["'][^>]+name=["']${prop}["']`,"i"),
+    ];
+    for (const re of patterns) {
+      const m = html.match(re);
+      if (m) return m[1].replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&#x27;/g,"'").trim();
+    }
+    return "";
   };
-  const getTag = (tag) => {
-    const m = html.match(new RegExp(`<${tag}[^>]*>([^<]+)</${tag}>`, "i"));
-    return m ? m[1].trim() : "";
-  };
-  // YouTube 특별처리: videoId로 썸네일 보장
+  const titleTag = html.match(/<title[^>]*>([^<]{1,300})<\/title>/i);
   const ytId = getYtId(url);
-  const thumb = ytId
-    ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-    : getOg("image");
   return {
-    title: getOg("title") || getTag("title") || "",
-    description: getOg("description") || getOg("desc") || "",
-    thumbnail: thumb,
+    title: getOg("title") || (titleTag ? titleTag[1].trim() : ""),
+    description: getOg("description"),
+    thumbnail: ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : getOg("image"),
     source: getOg("site_name") || detectSource(url),
   };
+}
+
+async function fetchOgMeta(rawUrl) {
+  const url = rawUrl.trim();
+
+  // ── YouTube: API 없이 바로 처리 ──
+  const ytId = getYtId(url);
+  if (ytId) {
+    // noembed는 CORS 허용, YouTube 제목 무료 제공
+    try {
+      const res = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`,
+        { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const j = await res.json();
+        return {
+          title: j.title || "",
+          description: "",
+          thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+          source: "YouTube",
+        };
+      }
+    } catch(e) {}
+    // noembed 실패해도 썸네일은 보장
+    return { title:"", description:"", thumbnail:`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`, source:"YouTube" };
+  }
+
+  // ── 일반 URL: 프록시 병렬 경쟁 ──
+  // 각 프록시에서 html 문자열을 반환하는 함수
+  const tryProxy = async (proxyUrl, isJson) => {
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error("not ok");
+    if (isJson) {
+      const j = await res.json();
+      const html = j.contents || j.body || "";
+      if (html.length < 50) throw new Error("empty");
+      return html;
+    }
+    const text = await res.text();
+    if (text.length < 50) throw new Error("empty");
+    return text;
+  };
+
+  const enc = encodeURIComponent(url);
+  const proxyCalls = [
+    tryProxy(`https://api.allorigins.win/get?url=${enc}`, true),
+    tryProxy(`https://api.codetabs.com/v1/proxy?quest=${enc}`, false),
+    tryProxy(`https://thingproxy.freeboard.io/fetch/${enc}`, false),
+    tryProxy(`https://corsproxy.io/?${enc}`, false),
+  ];
+
+  // 가장 먼저 성공한 프록시 결과 사용
+  let html = "";
+  try {
+    html = await Promise.any(proxyCalls);
+  } catch(e) {
+    return null; // 모두 실패
+  }
+
+  const meta = parseOgFromHtml(html, url);
+  if (!meta.title && !meta.thumbnail) return null;
+  return meta;
 }
 
 function NewsForm({cats,onSubmit,onClose}){
@@ -814,8 +859,8 @@ function NewsForm({cats,onSubmit,onClose}){
           </div>
           {/* 상태 메시지 */}
           {fetchStatus==="ok"&&<div style={{fontSize:11,color:"#27AE60",marginTop:4}}>✓ 제목·설명·썸네일 자동 완성됐습니다</div>}
-          {fetchStatus==="fail"&&<div style={{fontSize:11,color:"#F2994A",marginTop:4}}>⚠ 자동 가져오기 실패 — 직접 입력해 주세요 (일부 사이트는 차단됨)</div>}
-          {fetching&&<div style={{fontSize:11,color:"#9B9A97",marginTop:4}}>⏳ 페이지 정보 가져오는 중...</div>}
+          {fetchStatus==="fail"&&<div style={{fontSize:11,color:"#F2994A",marginTop:4}}>⚠ 자동 가져오기 실패 — 해당 사이트가 외부 접근을 차단했습니다. 제목/썸네일을 직접 입력해 주세요.</div>}
+          {fetching&&<div style={{fontSize:11,color:"#9B9A97",marginTop:4}}>⏳ 여러 경로로 동시 시도 중...</div>}
         </FField>
 
         {/* 썸네일 미리보기 */}
