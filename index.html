@@ -673,7 +673,191 @@ const fInput={...inputSt,width:"100%"};
 
 function TaskForm({initial,cats,onSubmit,onClose}){const[title,setTitle]=useState(initial?.title||"");const[desc,setDesc]=useState(initial?.desc||"");const[cat,setCat]=useState(initial?.category||cats[0]?.id||"");const[pri,setPri]=useState(initial?.priority||"medium");const[due,setDue]=useState(initial?.dueDate?new Date(initial.dueDate).toISOString().split("T")[0]:"");return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>{initial?"할 일 수정":"새 할 일"}</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="할 일 입력" style={fInput} autoFocus /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="상세 (선택)" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="분류"><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{cats.map((c)=>(<button key={c.id} onClick={()=>setCat(c.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:cat===c.id?c.color:"#F7F6F3",color:cat===c.id?"#fff":"#6B6B6B",border:"none",fontWeight:500,fontFamily:"inherit"}}>{c.name}</button>))}</div></FField><FField label="우선순위"><div style={{display:"flex",gap:4}}>{PRIORITIES.map((p)=>(<button key={p.id} onClick={()=>setPri(p.id)} style={{padding:"4px 12px",borderRadius:4,fontSize:12,cursor:"pointer",background:pri===p.id?`${p.color}20`:"#F7F6F3",color:pri===p.id?p.color:"#6B6B6B",border:pri===p.id?`1.5px solid ${p.color}`:"1.5px solid transparent",fontFamily:"inherit"}}>{p.name}</button>))}</div></FField><FField label="마감일"><input type="date" value={due} onChange={(e)=>setDue(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),desc,category:cat,priority:pri,dueDate:due?new Date(due).getTime():null})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>{initial?"수정":"추가"}</button></div></div>);}
 
-function NewsForm({cats,onSubmit,onClose}){const[url,setUrl]=useState("");const[title,setTitle]=useState("");const[desc,setDesc]=useState("");const[thumb,setThumb]=useState("");const[selCats,setSelCats]=useState([]);const[selSubs,setSelSubs]=useState([]);const[source,setSource]=useState("");const toggleCat=(id)=>setSelCats((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);const toggleSub=(id)=>setSelSubs((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE"}}><div style={{display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>뉴스 추가</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div></div><div style={{padding:"16px 20px"}}><FField label="URL"><input value={url} onChange={(e)=>{setUrl(e.target.value);setSource(detectSource(e.target.value));}} placeholder="https://..." style={fInput} autoFocus /></FField><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="기사 제목" style={fInput} /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="간단 메모" rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="썸네일 URL"><input value={thumb} onChange={(e)=>setThumb(e.target.value)} placeholder="이미지 URL (선택)" style={fInput} /></FField><FField label="카테고리"><div style={{display:"flex",flexDirection:"column",gap:6}}>{cats.map((c)=>(<div key={c.id}><button onClick={()=>toggleCat(c.id)} style={{padding:"4px 10px",borderRadius:4,fontSize:12,cursor:"pointer",background:selCats.includes(c.id)?c.color:"#F7F6F3",color:selCats.includes(c.id)?"#fff":"#6B6B6B",border:"none",fontFamily:"inherit",fontWeight:500}}>{c.name}</button>{selCats.includes(c.id)&&c.subs.length>0&&(<div style={{display:"flex",gap:4,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>{c.subs.map((s)=>(<button key={s.id} onClick={()=>toggleSub(s.id)} style={{padding:"2px 8px",borderRadius:3,fontSize:11,cursor:"pointer",background:selSubs.includes(s.id)?`${c.color}20`:"#F7F6F3",color:selSubs.includes(s.id)?c.color:"#9B9A97",border:selSubs.includes(s.id)?`1px solid ${c.color}44`:"1px solid transparent",fontFamily:"inherit"}}>{s.name}</button>))}</div>)}</div>))}</div></FField><FField label="출처"><input value={source} onChange={(e)=>setSource(e.target.value)} placeholder="자동 감지" style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),url,description:desc,thumbnail:thumb,categories:selCats,subCategories:selSubs,source:source||detectSource(url)})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4,opacity:title.trim()?1:0.4}}>추가</button></div></div>);}
+/* ═══ OG SCRAPER ═══ */
+async function fetchOgMeta(url) {
+  // 1순위: allorigins (가장 안정적)
+  // 2순위: corsproxy.io
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  ];
+  let html = "";
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(7000) });
+      if (!res.ok) continue;
+      const data = await res.json().catch(() => null);
+      html = data ? (data.contents || "") : await res.text();
+      if (html.length > 100) break;
+    } catch(e) { continue; }
+  }
+  if (!html) return null;
+  const getOg = (prop) => {
+    const m = html.match(new RegExp(`<meta[^>]+property=["']og:${prop}["'][^>]+content=["']([^"']+)["']`, "i"))
+               || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:${prop}["']`, "i"))
+               || html.match(new RegExp(`<meta[^>]+name=["']${prop}["'][^>]+content=["']([^"']+)["']`, "i"));
+    return m ? m[1].replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim() : "";
+  };
+  const getTag = (tag) => {
+    const m = html.match(new RegExp(`<${tag}[^>]*>([^<]+)</${tag}>`, "i"));
+    return m ? m[1].trim() : "";
+  };
+  // YouTube 특별처리: videoId로 썸네일 보장
+  const ytId = getYtId(url);
+  const thumb = ytId
+    ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+    : getOg("image");
+  return {
+    title: getOg("title") || getTag("title") || "",
+    description: getOg("description") || getOg("desc") || "",
+    thumbnail: thumb,
+    source: getOg("site_name") || detectSource(url),
+  };
+}
+
+function NewsForm({cats,onSubmit,onClose}){
+  const [url,setUrl]=useState("");
+  const [title,setTitle]=useState("");
+  const [desc,setDesc]=useState("");
+  const [thumb,setThumb]=useState("");
+  const [selCats,setSelCats]=useState([]);
+  const [selSubs,setSelSubs]=useState([]);
+  const [source,setSource]=useState("");
+  const [fetching,setFetching]=useState(false);
+  const [fetchStatus,setFetchStatus]=useState(null); // "ok"|"fail"|null
+  const toggleCat=(id)=>setSelCats((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);
+  const toggleSub=(id)=>setSelSubs((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);
+
+  const handleUrlChange = (e) => {
+    setUrl(e.target.value);
+    setSource(detectSource(e.target.value));
+    setFetchStatus(null);
+  };
+
+  const handleFetch = async () => {
+    if (!url.trim()) return;
+    setFetching(true);
+    setFetchStatus(null);
+    try {
+      const meta = await fetchOgMeta(url.trim());
+      if (meta && (meta.title || meta.thumbnail)) {
+        if (meta.title && !title) setTitle(meta.title);
+        if (meta.description && !desc) setDesc(meta.description);
+        if (meta.thumbnail && !thumb) setThumb(meta.thumbnail);
+        if (meta.source) setSource(meta.source);
+        setFetchStatus("ok");
+      } else {
+        setFetchStatus("fail");
+      }
+    } catch(e) {
+      setFetchStatus("fail");
+    }
+    setFetching(false);
+  };
+
+  // URL 붙여넣기시 자동 스크래핑
+  const handlePaste = (e) => {
+    const pasted = e.clipboardData.getData("text").trim();
+    if (pasted.startsWith("http")) {
+      setTimeout(() => {
+        setUrl(pasted);
+        setSource(detectSource(pasted));
+        setFetchStatus(null);
+        // 약간의 딜레이 후 자동 fetch
+        setTimeout(async () => {
+          setFetching(true);
+          try {
+            const meta = await fetchOgMeta(pasted);
+            if (meta && (meta.title || meta.thumbnail)) {
+              if (meta.title) setTitle(meta.title);
+              if (meta.description) setDesc(meta.description);
+              if (meta.thumbnail) setThumb(meta.thumbnail);
+              if (meta.source) setSource(meta.source);
+              setFetchStatus("ok");
+            } else { setFetchStatus("fail"); }
+          } catch(e) { setFetchStatus("fail"); }
+          setFetching(false);
+        }, 100);
+      }, 0);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE"}}>
+        <div style={{display:"flex",justifyContent:"space-between"}}>
+          <h2 style={{fontSize:16,fontWeight:700}}>뉴스 추가</h2>
+          <button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button>
+        </div>
+      </div>
+      <div style={{padding:"16px 20px"}}>
+
+        {/* URL + 자동 가져오기 */}
+        <FField label="URL">
+          <div style={{display:"flex",gap:6}}>
+            <input
+              value={url}
+              onChange={handleUrlChange}
+              onPaste={handlePaste}
+              placeholder="https://... (붙여넣기하면 자동 완성)"
+              style={{...fInput,flex:1}}
+              autoFocus
+            />
+            <button
+              onClick={handleFetch}
+              disabled={!url.trim()||fetching}
+              style={{...primaryBtn,padding:"8px 12px",flexShrink:0,opacity:url.trim()&&!fetching?1:0.4,minWidth:60}}
+            >
+              {fetching ? "..." : "가져오기"}
+            </button>
+          </div>
+          {/* 상태 메시지 */}
+          {fetchStatus==="ok"&&<div style={{fontSize:11,color:"#27AE60",marginTop:4}}>✓ 제목·설명·썸네일 자동 완성됐습니다</div>}
+          {fetchStatus==="fail"&&<div style={{fontSize:11,color:"#F2994A",marginTop:4}}>⚠ 자동 가져오기 실패 — 직접 입력해 주세요 (일부 사이트는 차단됨)</div>}
+          {fetching&&<div style={{fontSize:11,color:"#9B9A97",marginTop:4}}>⏳ 페이지 정보 가져오는 중...</div>}
+        </FField>
+
+        {/* 썸네일 미리보기 */}
+        {thumb&&(
+          <div style={{marginBottom:12,borderRadius:6,overflow:"hidden",maxHeight:140,background:"#F7F6F3",position:"relative"}}>
+            <img src={thumb} alt="" style={{width:"100%",objectFit:"cover",maxHeight:140,display:"block"}}
+              onError={(e)=>{e.target.parentElement.style.display="none"}} />
+            <button onClick={()=>setThumb("")} style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,0.5)",border:"none",borderRadius:4,color:"#fff",fontSize:11,padding:"2px 6px",cursor:"pointer"}}>✕</button>
+          </div>
+        )}
+
+        <FField label="제목">
+          <input value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="기사 제목" style={fInput} />
+        </FField>
+        <FField label="설명">
+          <textarea value={desc} onChange={(e)=>setDesc(e.target.value)} placeholder="간단 메모" rows={2} style={{...fInput,resize:"vertical"}} />
+        </FField>
+        <FField label="썸네일 URL">
+          <input value={thumb} onChange={(e)=>setThumb(e.target.value)} placeholder="이미지 URL (선택)" style={fInput} />
+        </FField>
+        <FField label="카테고리">
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {cats.map((c)=>(<div key={c.id}>
+              <button onClick={()=>toggleCat(c.id)} style={{padding:"4px 10px",borderRadius:4,fontSize:12,cursor:"pointer",background:selCats.includes(c.id)?c.color:"#F7F6F3",color:selCats.includes(c.id)?"#fff":"#6B6B6B",border:"none",fontFamily:"inherit",fontWeight:500}}>{c.name}</button>
+              {selCats.includes(c.id)&&c.subs.length>0&&(
+                <div style={{display:"flex",gap:4,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>
+                  {c.subs.map((s)=>(<button key={s.id} onClick={()=>toggleSub(s.id)} style={{padding:"2px 8px",borderRadius:3,fontSize:11,cursor:"pointer",background:selSubs.includes(s.id)?`${c.color}20`:"#F7F6F3",color:selSubs.includes(s.id)?c.color:"#9B9A97",border:selSubs.includes(s.id)?`1px solid ${c.color}44`:"1px solid transparent",fontFamily:"inherit"}}>{s.name}</button>))}
+                </div>
+              )}
+            </div>))}
+          </div>
+        </FField>
+        <FField label="출처">
+          <input value={source} onChange={(e)=>setSource(e.target.value)} placeholder="자동 감지" style={fInput} />
+        </FField>
+        <button
+          onClick={()=>title.trim()&&onSubmit({title:title.trim(),url,description:desc,thumbnail:thumb,categories:selCats,subCategories:selSubs,source:source||detectSource(url)})}
+          style={{...primaryBtn,width:"100%",padding:10,marginTop:4,opacity:title.trim()?1:0.4}}
+        >추가</button>
+      </div>
+    </div>
+  );
+}
 
 function NewsEditForm({initial,cats,onSubmit,onClose}){const[title,setTitle]=useState(initial.title||"");const[desc,setDesc]=useState(initial.description||"");const[thumb,setThumb]=useState(initial.thumbnail||"");const[selCats,setSelCats]=useState(initial.categories||[]);const[selSubs,setSelSubs]=useState(initial.subCategories||[]);const[source,setSource]=useState(initial.source||"");const toggleCat=(id)=>setSelCats((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);const toggleSub=(id)=>setSelSubs((p)=>p.includes(id)?p.filter((x)=>x!==id):[...p,id]);return(<div><div style={{padding:"16px 20px",borderBottom:"1px solid #F0F0EE",display:"flex",justifyContent:"space-between"}}><h2 style={{fontSize:16,fontWeight:700}}>뉴스 수정</h2><button onClick={onClose} style={{...linkBtn,fontSize:18,color:"#9B9A97"}}>✕</button></div><div style={{padding:"16px 20px"}}><FField label="제목"><input value={title} onChange={(e)=>setTitle(e.target.value)} style={fInput} /></FField><FField label="설명"><textarea value={desc} onChange={(e)=>setDesc(e.target.value)} rows={2} style={{...fInput,resize:"vertical"}} /></FField><FField label="썸네일"><input value={thumb} onChange={(e)=>setThumb(e.target.value)} style={fInput} /></FField><FField label="카테고리"><div style={{display:"flex",flexDirection:"column",gap:6}}>{cats.map((c)=>(<div key={c.id}><button onClick={()=>toggleCat(c.id)} style={{padding:"4px 10px",borderRadius:4,fontSize:12,cursor:"pointer",background:selCats.includes(c.id)?c.color:"#F7F6F3",color:selCats.includes(c.id)?"#fff":"#6B6B6B",border:"none",fontFamily:"inherit",fontWeight:500}}>{c.name}</button>{selCats.includes(c.id)&&c.subs.length>0&&(<div style={{display:"flex",gap:4,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>{c.subs.map((s)=>(<button key={s.id} onClick={()=>toggleSub(s.id)} style={{padding:"2px 8px",borderRadius:3,fontSize:11,cursor:"pointer",background:selSubs.includes(s.id)?`${c.color}20`:"#F7F6F3",color:selSubs.includes(s.id)?c.color:"#9B9A97",border:selSubs.includes(s.id)?`1px solid ${c.color}44`:"1px solid transparent",fontFamily:"inherit"}}>{s.name}</button>))}</div>)}</div>))}</div></FField><FField label="출처"><input value={source} onChange={(e)=>setSource(e.target.value)} style={fInput} /></FField><button onClick={()=>title.trim()&&onSubmit({title:title.trim(),description:desc,thumbnail:thumb,categories:selCats,subCategories:selSubs,source})} style={{...primaryBtn,width:"100%",padding:10,marginTop:4}}>수정</button></div></div>);}
 
