@@ -243,7 +243,10 @@ function App() {
   const reminders = staleT.length + staleN.length;
   const activeNewsFilter = newsSubFilter || newsMainFilter;
   const filteredTasks = data.tasks.filter((t)=>(taskTab==="active"?!t.done:t.done)).filter((t)=>taskFilter==="all"||t.category===taskFilter).filter((t)=>!search||`${t.title} ${t.desc||""}`.toLowerCase().includes(search.toLowerCase()));
-  const filteredNews = data.news.filter((n)=>newsMatchesFilter(n,activeNewsFilter,data.newsCats)).filter((n)=>!search||`${n.title} ${n.description||""}`.toLowerCase().includes(search.toLowerCase()));
+  const filteredNews = data.news
+    .filter((n)=>newsMatchesFilter(n,activeNewsFilter,data.newsCats))
+    .filter((n)=>!search||`${n.title} ${n.description||""}`.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
 
   const addTask=(t)=>save({...data,tasks:[{...t,id:uid(),createdAt:Date.now(),done:false,lastChecked:null},...data.tasks]});
   const updTask=(id,u)=>save({...data,tasks:data.tasks.map((t)=>t.id===id?{...t,...u}:t)});
@@ -350,6 +353,7 @@ function App() {
         .slide-inner{will-change:transform;min-height:1px}
         .row-h:hover{background:#FAFAFA}
         .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
+        .card-pinned{transition:box-shadow 0.2s,transform 0.2s}.card-pinned:hover{box-shadow:0 6px 20px rgba(245,158,11,0.18);transform:translateY(-2px)}
         @media(max-width:767px){
           .desk{display:none!important}.main-ml{margin-left:0!important}
           .ngrid{grid-template-columns:1fr!important}
@@ -523,32 +527,92 @@ function App() {
 
             {/* NEWS */}
             {view==="news"&&(<section style={{animation:"fadeUp 0.3s"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>News Hub</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>{filteredNews.length}개{newsFilterLabel?` · ${newsFilterLabel}`:""}</p></div><button onClick={()=>openModal("news")} style={primaryBtn}>+ 추가</button></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                <div><h1 style={{fontSize:22,fontWeight:700}}>News Hub</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>{filteredNews.length}개{newsFilterLabel?` · ${newsFilterLabel}`:""}</p></div>
+                <button onClick={()=>openModal("news")} style={primaryBtn}>+ 추가</button>
+              </div>
               {filteredNews.length===0?<Empty icon="📰" msg="뉴스를 추가해보세요" />:(
-                <div className="ngrid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-                  {filteredNews.map((n,i)=>{const stale=!n.read&&daysAgo(n.lastChecked||n.createdAt)>=STALE;return(
-                    <div key={n.id} className="card-h" style={{border:`1.5px solid ${stale?"#FECACA":"#D5D3CE"}`,borderRadius:8,overflow:"hidden",opacity:n.read?0.55:1,animation:`fadeUp 0.3s ease ${i*0.03}s both`}}>
-                      <ThumbMedia thumb={n.thumbnail} url={n.url} source={n.source||detectSource(n.url)} />
-                      <div style={{padding:"12px 14px"}}>
-                        <div style={{display:"flex",alignItems:"start",gap:6}}><h3 style={{flex:1,fontSize:13.5,fontWeight:600,lineHeight:1.4}}>{n.title}</h3>{stale&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FEE2E2",color:"#EB5757",flexShrink:0}}>{daysAgo(n.lastChecked||n.createdAt)}일</span>}</div>
-                        {n.description&&<p style={{fontSize:12,color:"#9B9A97",lineHeight:1.45,marginTop:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{n.description}</p>}
-                        <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:8}}>
-                          {(n.categories||[]).map((cid)=>{const mc=data.newsCats.find((c)=>c.id===cid);return mc?<Tag key={cid} label={mc.name} color={mc.color} />:null;})}
-                          {(n.subCategories||[]).map((sid)=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===sid));const sub=p?.subs.find((s)=>s.id===sid);return sub?<span key={sid} style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"#F7F6F3",color:"#9B9A97"}}>{sub.name}</span>:null;})}
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:"1px solid #F7F6F3"}}>
-                          <span style={{fontSize:10,color:"#B4B4B0"}}>{n.source||detectSource(n.url)} · {fmtDate(n.createdAt)}</span>
-                          <div style={{display:"flex",gap:12}}>
-                            {n.url&&<a href={n.url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#2F80ED",textDecoration:"none",fontWeight:500}}>열기↗</a>}
-                            <button onClick={()=>updNews(n.id,{read:!n.read,lastChecked:Date.now()})} style={tinyBtn}>{n.read?"✓읽음":"읽기"}</button>
-                            <button onClick={()=>openModal("news-edit",n)} style={tinyBtn}>✎</button>
-                            <button onClick={()=>delNews(n.id)} style={tinyBtn}>✕</button>
+                <React.Fragment>
+                  {/* ── PINNED 구역 ── */}
+                  {filteredNews.some(n=>n.pinned)&&(
+                    <div style={{marginBottom:20}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+                        <span style={{fontSize:12,fontWeight:700,color:"#F59E0B",letterSpacing:0.3}}>📌 PINNED</span>
+                        <div style={{flex:1,height:1,background:"#FDE68A"}} />
+                      </div>
+                      <div className="ngrid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+                        {filteredNews.filter(n=>n.pinned).map((n,i)=>{const stale=!n.read&&daysAgo(n.lastChecked||n.createdAt)>=STALE;return(
+                          <div key={n.id} className="card-pinned" style={{border:`2px solid #FCD34D`,borderRadius:8,overflow:"hidden",opacity:n.read?0.65:1,animation:`fadeUp 0.3s ease ${i*0.03}s both`,position:"relative"}}>
+                            <div style={{position:"absolute",top:6,left:6,zIndex:2,background:"#F59E0B",borderRadius:4,padding:"1px 5px",display:"flex",alignItems:"center",gap:3}}>
+                              <span style={{fontSize:9,color:"#fff",fontWeight:700}}>📌 PIN</span>
+                            </div>
+                            <ThumbMedia thumb={n.thumbnail} url={n.url} source={n.source||detectSource(n.url)} />
+                            <div style={{padding:"12px 14px"}}>
+                              <div style={{display:"flex",alignItems:"start",gap:6}}>
+                                <h3 style={{flex:1,fontSize:13.5,fontWeight:600,lineHeight:1.4}}>{n.title}</h3>
+                                {stale&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FEE2E2",color:"#EB5757",flexShrink:0}}>{daysAgo(n.lastChecked||n.createdAt)}일</span>}
+                              </div>
+                              {n.description&&<p style={{fontSize:12,color:"#9B9A97",lineHeight:1.45,marginTop:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{n.description}</p>}
+                              <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:8}}>
+                                {(n.categories||[]).map((cid)=>{const mc=data.newsCats.find((c)=>c.id===cid);return mc?<Tag key={cid} label={mc.name} color={mc.color} />:null;})}
+                                {(n.subCategories||[]).map((sid)=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===sid));const sub=p?.subs.find((s)=>s.id===sid);return sub?<span key={sid} style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"#F7F6F3",color:"#9B9A97"}}>{sub.name}</span>:null;})}
+                              </div>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:"1px solid #F7F6F3"}}>
+                                <span style={{fontSize:10,color:"#B4B4B0"}}>{n.source||detectSource(n.url)} · {fmtDate(n.createdAt)}</span>
+                                <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                                  {n.url&&<a href={n.url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#2F80ED",textDecoration:"none",fontWeight:500}}>열기↗</a>}
+                                  <button onClick={()=>updNews(n.id,{read:!n.read,lastChecked:Date.now()})} style={tinyBtn}>{n.read?"✓읽음":"읽기"}</button>
+                                  <button title="핀 해제" onClick={()=>updNews(n.id,{pinned:false})} style={{...tinyBtn,color:"#F59E0B",fontWeight:700}}>📌</button>
+                                  <button onClick={()=>openModal("news-edit",n)} style={tinyBtn}>✎</button>
+                                  <button onClick={()=>delNews(n.id)} style={tinyBtn}>✕</button>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        );})}
                       </div>
                     </div>
-                  );})}
-                </div>
+                  )}
+                  {/* ── 일반 구역 ── */}
+                  {filteredNews.some(n=>!n.pinned)&&(
+                    <React.Fragment>
+                      {filteredNews.some(n=>n.pinned)&&(
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+                          <span style={{fontSize:12,fontWeight:700,color:"#9B9A97",letterSpacing:0.3}}>전체</span>
+                          <div style={{flex:1,height:1,background:"#EFEFEF"}} />
+                        </div>
+                      )}
+                      <div className="ngrid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+                        {filteredNews.filter(n=>!n.pinned).map((n,i)=>{const stale=!n.read&&daysAgo(n.lastChecked||n.createdAt)>=STALE;return(
+                          <div key={n.id} className="card-h" style={{border:`1.5px solid ${stale?"#FECACA":"#D5D3CE"}`,borderRadius:8,overflow:"hidden",opacity:n.read?0.55:1,animation:`fadeUp 0.3s ease ${i*0.03}s both`}}>
+                            <ThumbMedia thumb={n.thumbnail} url={n.url} source={n.source||detectSource(n.url)} />
+                            <div style={{padding:"12px 14px"}}>
+                              <div style={{display:"flex",alignItems:"start",gap:6}}>
+                                <h3 style={{flex:1,fontSize:13.5,fontWeight:600,lineHeight:1.4}}>{n.title}</h3>
+                                {stale&&<span style={{fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"#FEE2E2",color:"#EB5757",flexShrink:0}}>{daysAgo(n.lastChecked||n.createdAt)}일</span>}
+                              </div>
+                              {n.description&&<p style={{fontSize:12,color:"#9B9A97",lineHeight:1.45,marginTop:4,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{n.description}</p>}
+                              <div style={{display:"flex",gap:3,flexWrap:"wrap",marginTop:8}}>
+                                {(n.categories||[]).map((cid)=>{const mc=data.newsCats.find((c)=>c.id===cid);return mc?<Tag key={cid} label={mc.name} color={mc.color} />:null;})}
+                                {(n.subCategories||[]).map((sid)=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===sid));const sub=p?.subs.find((s)=>s.id===sid);return sub?<span key={sid} style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:"#F7F6F3",color:"#9B9A97"}}>{sub.name}</span>:null;})}
+                              </div>
+                              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10,paddingTop:8,borderTop:"1px solid #F7F6F3"}}>
+                                <span style={{fontSize:10,color:"#B4B4B0"}}>{n.source||detectSource(n.url)} · {fmtDate(n.createdAt)}</span>
+                                <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                                  {n.url&&<a href={n.url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#2F80ED",textDecoration:"none",fontWeight:500}}>열기↗</a>}
+                                  <button onClick={()=>updNews(n.id,{read:!n.read,lastChecked:Date.now()})} style={tinyBtn}>{n.read?"✓읽음":"읽기"}</button>
+                                  <button title="상단 고정" onClick={()=>updNews(n.id,{pinned:true})} style={{...tinyBtn,color:"#D1D5DB",fontSize:13}} onMouseEnter={e=>e.target.style.color="#F59E0B"} onMouseLeave={e=>e.target.style.color="#D1D5DB"}>📌</button>
+                                  <button onClick={()=>openModal("news-edit",n)} style={tinyBtn}>✎</button>
+                                  <button onClick={()=>delNews(n.id)} style={tinyBtn}>✕</button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );})}
+                      </div>
+                    </React.Fragment>
+                  )}
+                </React.Fragment>
               )}
             </section>)}
 
