@@ -96,26 +96,78 @@ const detectSource = (url) => { if (!url) return "Web"; const u=url.toLowerCase(
 
 // 썸네일 URL → YouTube/mp4 처리
 const getYtId = (url) => { if (!url) return null; let m = url.match(/youtube\.com\/watch\?.*v=([^&]+)/); if (m) return m[1]; m = url.match(/youtu\.be\/([^?&]+)/); if (m) return m[1]; return null; };
-const isVideo = (url) => url && (url.toLowerCase().endsWith(".mp4") || url.toLowerCase().includes(".mp4?"));
+const isVideo = (url) => url && (url.toLowerCase().includes(".mp4"));
+
 function ThumbMedia({ thumb, url, source }) {
+  const [videoFailed, setVideoFailed] = React.useState(false);
+  const [imgFailed, setImgFailed] = React.useState(false);
   const ytId = getYtId(thumb||"") || getYtId(url||"");
   const goUrl = url ? () => window.open(url, "_blank", "noopener,noreferrer") : null;
-  const thumbStyle = {cursor: url?"pointer":"default"};
+  const base = {cursor:url?"pointer":"default"};
+
+  // YouTube
   if (ytId) {
-    return (<div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#000",position:"relative",...thumbStyle}}>
-      <img src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} />
-      <span style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:32,pointerEvents:"none",filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.5))"}}>▶</span>
-    </div>);
+    return (
+      <div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#000",position:"relative",...base}}>
+        <img src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} alt=""
+          style={{width:"100%",height:"100%",objectFit:"cover"}}
+          onError={(e)=>{e.target.parentElement.style.height="0"}} />
+        <span style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
+          fontSize:32,pointerEvents:"none",filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.5))"}}>▶</span>
+      </div>
+    );
   }
+
+  // MP4 동영상 — 만료되면 fallback 표시
   if (isVideo(thumb||"")) {
-    return (<div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#111",position:"relative",...thumbStyle}}>
-      <video src={thumb} autoPlay muted loop playsInline style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} />
-    </div>);
+    // 영상 로드 실패(만료/403) → 출처 + 만료 안내 카드로 전환
+    if (videoFailed) {
+      return (
+        <div onClick={goUrl} style={{height:72,background:"#F3F4F6",borderBottom:"1px solid #E5E7EB",
+          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,...base}}>
+          <span style={{fontSize:18}}>🎬</span>
+          <span style={{fontSize:10,color:"#9B9A97",fontWeight:500}}>동영상 미리보기 만료됨</span>
+          {url&&<span style={{fontSize:10,color:"#56B4E8"}}>클릭하여 원본 열기 ↗</span>}
+        </div>
+      );
+    }
+    return (
+      <div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#111",position:"relative",...base}}>
+        <video
+          src={thumb}
+          autoPlay muted loop playsInline
+          style={{width:"100%",height:"100%",objectFit:"cover"}}
+          onError={()=>setVideoFailed(true)}
+        />
+      </div>
+    );
   }
+
+  // 일반 이미지 — 로드 실패 시 소스 라벨로 전환
   if (thumb) {
-    return (<div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#F7F6F3",...thumbStyle}}><img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} /></div>);
+    if (imgFailed) {
+      return (
+        <div onClick={goUrl} style={{height:36,background:"#FBFBFA",borderBottom:"1px solid #F7F6F3",
+          display:"flex",alignItems:"center",justifyContent:"center",...base}}>
+          <span style={{fontSize:10,color:"#B4B4B0",letterSpacing:1}}>{source}</span>
+        </div>
+      );
+    }
+    return (
+      <div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#F7F6F3",...base}}>
+        <img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}
+          onError={()=>setImgFailed(true)} />
+      </div>
+    );
   }
-  return (<div onClick={goUrl} style={{height:36,background:"#FBFBFA",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"center",justifyContent:"center",...thumbStyle}}><span style={{fontSize:10,color:"#B4B4B0",letterSpacing:1}}>{source}</span></div>);
+
+  // 썸네일 없음
+  return (
+    <div onClick={goUrl} style={{height:36,background:"#FBFBFA",borderBottom:"1px solid #F7F6F3",
+      display:"flex",alignItems:"center",justifyContent:"center",...base}}>
+      <span style={{fontSize:10,color:"#B4B4B0",letterSpacing:1}}>{source}</span>
+    </div>
+  );
 }
 const defaultData = () => ({ tasks: [], news: [], taskCats: DEFAULT_TASK_CATS, newsCats: DEFAULT_NEWS_CATS });
 
