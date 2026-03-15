@@ -99,22 +99,23 @@ const getYtId = (url) => { if (!url) return null; let m = url.match(/youtube\.co
 const isVideo = (url) => url && (url.toLowerCase().endsWith(".mp4") || url.toLowerCase().includes(".mp4?"));
 function ThumbMedia({ thumb, url, source }) {
   const ytId = getYtId(thumb||"") || getYtId(url||"");
+  const goUrl = url ? () => window.open(url, "_blank", "noopener,noreferrer") : null;
+  const thumbStyle = {cursor: url?"pointer":"default"};
   if (ytId) {
-    return (<div style={{height:140,overflow:"hidden",background:"#000",position:"relative"}}>
+    return (<div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#000",position:"relative",...thumbStyle}}>
       <img src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} />
-      <span style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:28,pointerEvents:"none"}}>▶</span>
+      <span style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",fontSize:32,pointerEvents:"none",filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.5))"}}>▶</span>
     </div>);
   }
   if (isVideo(thumb||"")) {
-    return (<div style={{height:140,overflow:"hidden",background:"#111",position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <video src={thumb} muted style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} />
-      <span style={{position:"absolute",fontSize:28,pointerEvents:"none"}}>▶</span>
+    return (<div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#111",position:"relative",...thumbStyle}}>
+      <video src={thumb} autoPlay muted loop playsInline style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} />
     </div>);
   }
   if (thumb) {
-    return (<div style={{height:140,overflow:"hidden",background:"#F7F6F3"}}><img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} /></div>);
+    return (<div onClick={goUrl} style={{height:140,overflow:"hidden",background:"#F7F6F3",...thumbStyle}}><img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={(e)=>{e.target.parentElement.style.height="0"}} /></div>);
   }
-  return (<div style={{height:36,background:"#FBFBFA",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:"#B4B4B0",letterSpacing:1}}>{source}</span></div>);
+  return (<div onClick={goUrl} style={{height:36,background:"#FBFBFA",borderBottom:"1px solid #F7F6F3",display:"flex",alignItems:"center",justifyContent:"center",...thumbStyle}}><span style={{fontSize:10,color:"#B4B4B0",letterSpacing:1}}>{source}</span></div>);
 }
 const defaultData = () => ({ tasks: [], news: [], taskCats: DEFAULT_TASK_CATS, newsCats: DEFAULT_NEWS_CATS });
 
@@ -146,11 +147,13 @@ function App() {
   const [modal, setModal] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [catEdit, setCatEdit] = useState(null);
   const [sideExpanded, setSideExpanded] = useState([]);
+  const [swipeDir, setSwipeDir] = useState(null); // "left" | "right" | null
   const saveRef = useRef(null);
   const loadedRef = useRef(false);
-  const localSaveRef = useRef(false); // true when we just saved locally, skip next onSnapshot
+  const localSaveRef = useRef(false);
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const touchStartEdge = useRef(false);
@@ -268,26 +271,36 @@ function App() {
   const newsFilterLabel=newsSubFilter?(()=>{const p=data.newsCats.find((c)=>c.subs.some((s)=>s.id===newsSubFilter));return`${p?.name} › ${p?.subs.find((s)=>s.id===newsSubFilter)?.name}`;})():newsMainFilter!=="all"?selectedMainCat?.name:null;
   const catType=view==="tasks"?"task":"news";
 
-  // 수정5,6: 스와이프 핸들러
+  // 스와이프 핸들러
   const NAV_ORDER = ["tasks","news","reminders"];
+  const changeView = (nextView, dir) => {
+    setSwipeDir(dir);
+    setTimeout(() => {
+      setView(nextView);
+      setSearch("");
+      setFilterOpen(false);
+      setSwipeDir(null);
+    }, 260);
+  };
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
-    touchStartEdge.current = e.touches[0].clientX <= 20;
+    touchStartEdge.current = e.touches[0].clientX <= 22;
   };
   const handleTouchEnd = (e) => {
     if (touchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (Math.abs(dy) > Math.abs(dx)) return; // 세로 스크롤 우선
-    // 엣지 스와이프: 필터 열기/닫기
-    if (touchStartEdge.current && dx > 60) { setFilterOpen(true); touchStartX.current = null; return; }
-    if (filterOpen && dx < -50) { setFilterOpen(false); touchStartX.current = null; return; }
-    // 탭 전환 스와이프 (50px 이상)
-    if (Math.abs(dx) >= 50) {
+    if (Math.abs(dy) > Math.abs(dx)) { touchStartX.current = null; return; }
+    // 엣지 스와이프: 드로어 열기
+    if (touchStartEdge.current && dx > 55 && !drawerOpen) { setDrawerOpen(true); touchStartX.current = null; return; }
+    // 드로어 열린 상태에서 왼쪽 스와이프: 닫기
+    if (drawerOpen && dx < -50) { setDrawerOpen(false); touchStartX.current = null; return; }
+    // 탭 전환 스와이프 (드로어 닫혀있을 때만)
+    if (!drawerOpen && Math.abs(dx) >= 50) {
       const cur = NAV_ORDER.indexOf(view);
-      if (dx < 0 && cur < NAV_ORDER.length - 1) { setView(NAV_ORDER[cur+1]); setSearch(""); setFilterOpen(false); }
-      if (dx > 0 && cur > 0) { setView(NAV_ORDER[cur-1]); setSearch(""); setFilterOpen(false); }
+      if (dx < 0 && cur < NAV_ORDER.length - 1) changeView(NAV_ORDER[cur+1], "left");
+      if (dx > 0 && cur > 0) changeView(NAV_ORDER[cur-1], "right");
     }
     touchStartX.current = null;
   };
@@ -303,6 +316,14 @@ function App() {
         @keyframes fadeSlide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
         @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes swipeOutLeft{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(-28%)}}
+        @keyframes swipeOutRight{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(28%)}}
+        @keyframes swipeInRight{from{opacity:0;transform:translateX(28%)}to{opacity:1;transform:translateX(0)}}
+        @keyframes swipeInLeft{from{opacity:0;transform:translateX(-28%)}to{opacity:1;transform:translateX(0)}}
+        .swipe-out-left{animation:swipeOutLeft 0.26s ease forwards}
+        .swipe-out-right{animation:swipeOutRight 0.26s ease forwards}
+        .swipe-in-right{animation:swipeInRight 0.26s ease forwards}
+        .swipe-in-left{animation:swipeInLeft 0.26s ease forwards}
         .row-h:hover{background:#FAFAFA}
         .card-h{transition:box-shadow 0.2s,transform 0.2s}.card-h:hover{box-shadow:0 4px 16px rgba(0,0,0,0.06);transform:translateY(-2px)}
         @media(max-width:767px){.desk{display:none!important}.main-ml{margin-left:0!important}.ngrid{grid-template-columns:1fr!important}.row-h div{font-size:inherit}.main-ml h1{font-size:24px!important}.main-ml h3{font-size:15px!important}.main-ml p,.main-ml span,.main-ml div{font-size:inherit}}
@@ -369,39 +390,58 @@ function App() {
         <main className="main-ml" style={{flex:1,marginLeft:220,minHeight:"100vh",paddingBottom:80}}>
           <div style={{position:"sticky",top:0,zIndex:30,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(12px)",borderBottom:"1px solid #F0F0EE",padding:"10px 20px",display:"flex",alignItems:"center",gap:8}}>
             <div style={{position:"relative",flex:"0 1 300px"}}><input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="검색..." style={{...inputSt,paddingLeft:30,width:"100%"}} /><span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"#B4B4B0"}}>⌕</span></div>
-            <button className="mob" onClick={()=>setFilterOpen(!filterOpen)} style={{background:filterOpen?"#37352F":"#F7F6F3",border:"none",borderRadius:6,padding:"7px 10px",fontSize:12,cursor:"pointer",color:filterOpen?"#fff":"#6B6B6B",fontWeight:500,fontFamily:"inherit"}}>{filterOpen?"✕ 닫기":"필터"}</button>
+            <button className="mob" onClick={()=>setDrawerOpen(!drawerOpen)} style={{background:drawerOpen?"#37352F":"#F7F6F3",border:"none",borderRadius:6,padding:"7px 10px",fontSize:12,cursor:"pointer",color:drawerOpen?"#fff":"#6B6B6B",fontWeight:500,fontFamily:"inherit"}}>{drawerOpen?"✕ 닫기":"필터"}</button>
             <div style={{flex:1}} />
             <span className="mob"><SyncBadge status={syncStatus} /></span>
             {reminders>0&&view!=="reminders"&&<button className="desk" onClick={()=>setView("reminders")} style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:"#DC2626",cursor:"pointer",fontFamily:"inherit"}}>⏰ {reminders}</button>}
           </div>
 
-          {/* Mobile filter */}
-          {filterOpen&&(view==="tasks"||view==="news")&&(
-            <div className="mob" style={{borderBottom:"1px solid #EFEFEF",background:"#FBFBFA"}}>
-              {catEdit===catType?(
-                <div style={{padding:"10px 16px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:11,fontWeight:700,color:"#B4B4B0"}}>카테고리 편집</span><button onClick={()=>setCatEdit(null)} style={{...linkBtn,fontSize:11,color:"#2F80ED"}}>완료</button></div>
-                  {getCats(catType).map((cat)=>(<div key={cat.id} style={{marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:6}}><input type="color" value={cat.color} onChange={(e)=>updCat(catType,cat.id,{color:e.target.value})} style={{width:18,height:18,border:"none",padding:0,cursor:"pointer"}} /><input value={cat.name} onChange={(e)=>updCat(catType,cat.id,{name:e.target.value})} style={{...editInput,fontSize:13}} /><button onClick={()=>delCat(catType,cat.id)} style={{...linkBtn,color:"#EB5757",fontSize:14}}>✕</button></div>{cat.subs.length>0&&<div style={{paddingLeft:24,marginTop:2}}>{cat.subs.map((sub)=>(<div key={sub.id} style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}><span style={{width:6,height:6,borderRadius:1,background:`${cat.color}66`}} /><input value={sub.name} onChange={(e)=>updSub(catType,cat.id,sub.id,{name:e.target.value})} style={{...editInput,fontSize:12}} /><button onClick={()=>delSub(catType,cat.id,sub.id)} style={{...linkBtn,color:"#EB5757",fontSize:12}}>✕</button></div>))}<button onClick={()=>addSub(catType,cat.id)} style={{...linkBtn,fontSize:11,paddingLeft:12,marginTop:2,color:`${cat.color}99`}}>+ 서브</button></div>}</div>))}
-                  <button onClick={()=>addCat(catType)} style={{...linkBtn,fontSize:12,color:"#2F80ED",marginTop:4}}>+ 메인 카테고리 추가</button>
-                </div>
-              ):(
-                <React.Fragment>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px 0"}}><span style={{fontSize:10,fontWeight:700,color:"#B4B4B0"}}>카테고리</span><button onClick={()=>setCatEdit(catType)} style={{...linkBtn,fontSize:10,color:"#2F80ED"}}>편집</button></div>
-                  <div style={{display:"flex",gap:5,padding:"8px 16px",overflowX:"auto"}}>
-                    <Chip label={`전체 ${view==="tasks"?data.tasks.filter((t)=>!t.done).length:data.news.length}`} active={(view==="tasks"?taskFilter:newsMainFilter)==="all"} onClick={()=>{setTaskFilter("all");setNewsMainFilter("all");setNewsSubFilter(null);}} />
-                    {getCats(catType).map((cat)=>{const isA=view==="tasks"?taskFilter===cat.id:newsMainFilter===cat.id;return(<Chip key={cat.id} label={cat.name} color={cat.color} active={isA} hasSubs={cat.subs.length>0} expanded={isA} onClick={()=>{if(view==="tasks")setTaskFilter(isA?"all":cat.id);else{setNewsMainFilter(isA?"all":cat.id);setNewsSubFilter(null);}}} />);})}
-                  </div>
-                  {view==="news"&&selectedMainCat?.subs.length>0&&(<div style={{display:"flex",gap:4,padding:"0 16px 10px",overflowX:"auto",animation:"fadeSlide 0.2s"}}>
-                    <SubChip label={`전체 ${data.news.filter((n)=>(n.categories||[]).includes(newsMainFilter)).length}`} active={!newsSubFilter} color={selectedMainCat.color} onClick={()=>setNewsSubFilter(null)} />
-                    {selectedMainCat.subs.map((sub)=>(<SubChip key={sub.id} label={sub.name} count={data.news.filter((n)=>(n.subCategories||[]).includes(sub.id)).length} active={newsSubFilter===sub.id} color={selectedMainCat.color} onClick={()=>setNewsSubFilter(newsSubFilter===sub.id?null:sub.id)} />))}
-                  </div>)}
-                </React.Fragment>
-              )}
+          {/* Mobile Drawer — 왼쪽 슬라이드 필터 패널 */}
+          <div className="mob" onClick={()=>setDrawerOpen(false)} style={{position:"fixed",inset:0,zIndex:60,background:"rgba(0,0,0,0.35)",opacity:drawerOpen?1:0,pointerEvents:drawerOpen?"auto":"none",transition:"opacity 0.25s"}} />
+          <div className="mob" style={{position:"fixed",top:0,left:0,bottom:0,zIndex:61,width:270,background:"#FBFBFA",boxShadow:"4px 0 24px rgba(0,0,0,0.12)",transform:drawerOpen?"translateX(0)":"translateX(-100%)",transition:"transform 0.27s cubic-bezier(0.4,0,0.2,1)",overflowY:"auto",paddingBottom:"env(safe-area-inset-bottom)"}}>
+            <div style={{padding:"16px 14px 6px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#37352F"}}>카테고리</span>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <button onClick={()=>setCatEdit(catEdit?null:catType)} style={{...linkBtn,fontSize:11,color:"#2F80ED"}}>{catEdit===catType?"완료":"편집"}</button>
+                <button onClick={()=>setDrawerOpen(false)} style={{...linkBtn,fontSize:18,color:"#9B9A97",lineHeight:1}}>✕</button>
+              </div>
             </div>
-          )}
-          {!filterOpen&&newsFilterLabel&&view==="news"&&(<div className="mob" style={{padding:"6px 16px",background:"#FBFBFA",borderBottom:"1px solid #EFEFEF",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:"#9B9A97"}}>필터:</span><span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:`${selectedMainCat?.color||"#37352F"}15`,color:selectedMainCat?.color||"#37352F"}}>{newsFilterLabel}</span><button onClick={()=>{setNewsMainFilter("all");setNewsSubFilter(null);}} style={{...linkBtn,fontSize:12,color:"#B4B4B0"}}>✕</button></div>)}
+            {catEdit===catType?(
+              <div style={{padding:"6px 14px 12px"}}>
+                {getCats(catType).map((cat)=>(<div key={cat.id} style={{marginBottom:8}}><div style={{display:"flex",alignItems:"center",gap:6}}><input type="color" value={cat.color} onChange={(e)=>updCat(catType,cat.id,{color:e.target.value})} style={{width:20,height:20,border:"none",padding:0,cursor:"pointer",borderRadius:3}} /><input value={cat.name} onChange={(e)=>updCat(catType,cat.id,{name:e.target.value})} style={{...editInput,fontSize:13}} /><button onClick={()=>delCat(catType,cat.id)} style={{...linkBtn,color:"#EB5757",fontSize:14}}>✕</button></div>{cat.subs.length>0&&<div style={{paddingLeft:26,marginTop:3}}>{cat.subs.map((sub)=>(<div key={sub.id} style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}><span style={{width:6,height:6,borderRadius:1,background:`${cat.color}66`,flexShrink:0}} /><input value={sub.name} onChange={(e)=>updSub(catType,cat.id,sub.id,{name:e.target.value})} style={{...editInput,fontSize:12}} /><button onClick={()=>delSub(catType,cat.id,sub.id)} style={{...linkBtn,color:"#EB5757",fontSize:12}}>✕</button></div>))}<button onClick={()=>addSub(catType,cat.id)} style={{...linkBtn,fontSize:11,paddingLeft:12,marginTop:3,color:`${cat.color}AA`}}>+ 서브</button></div>}</div>))}
+                <button onClick={()=>addCat(catType)} style={{...linkBtn,fontSize:12,color:"#2F80ED",marginTop:6}}>+ 메인 카테고리</button>
+              </div>
+            ):(
+              <div style={{padding:"4px 10px 12px"}}>
+                {/* 전체 */}
+                <button onClick={()=>{setTaskFilter("all");setNewsMainFilter("all");setNewsSubFilter(null);setDrawerOpen(false);}} style={{width:"100%",textAlign:"left",padding:"8px 8px",borderRadius:6,border:"none",cursor:"pointer",background:(view==="tasks"?taskFilter:newsMainFilter)==="all"?"#EFEFEF":"transparent",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                  <span style={{width:8,height:8,borderRadius:2,background:"#37352F",flexShrink:0}} />
+                  <span style={{fontSize:13,fontWeight:(view==="tasks"?taskFilter:newsMainFilter)==="all"?700:400,color:"#37352F"}}>전체</span>
+                  <span style={{fontSize:11,color:"#B4B4B0",marginLeft:"auto"}}>{view==="tasks"?data.tasks.filter((t)=>!t.done).length:data.news.length}</span>
+                </button>
+                {getCats(catType).map((cat)=>{
+                  const isCatA=view==="tasks"?taskFilter===cat.id:newsMainFilter===cat.id;
+                  const hasSubs=cat.subs.length>0;
+                  return (<div key={cat.id} style={{marginBottom:1}}>
+                    <button onClick={()=>{if(view==="tasks"){setTaskFilter(isCatA?"all":cat.id);setDrawerOpen(false);}else{setNewsMainFilter(isCatA?"all":cat.id);setNewsSubFilter(null);if(!hasSubs)setDrawerOpen(false);}}} style={{width:"100%",textAlign:"left",padding:"8px 8px",borderRadius:6,border:"none",cursor:"pointer",background:isCatA?`${cat.color}12`:"transparent",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{width:8,height:8,borderRadius:2,background:cat.color,flexShrink:0}} />
+                      <span style={{fontSize:13,fontWeight:isCatA?700:400,color:isCatA?cat.color:"#37352F"}}>{cat.name}</span>
+                      <span style={{fontSize:11,color:"#B4B4B0",marginLeft:"auto"}}>{view==="tasks"?data.tasks.filter((t)=>!t.done&&t.category===cat.id).length:data.news.filter((n)=>(n.categories||[]).includes(cat.id)).length}</span>
+                    </button>
+                    {hasSubs&&isCatA&&view==="news"&&(<div style={{paddingLeft:24,borderLeft:`2px solid ${cat.color}33`,marginLeft:12,marginBottom:4}}>
+                      <button onClick={()=>{setNewsSubFilter(null);setDrawerOpen(false);}} style={{width:"100%",textAlign:"left",padding:"5px 8px",borderRadius:4,border:"none",cursor:"pointer",background:!newsSubFilter?"#F0F0EE":"transparent",fontFamily:"inherit",fontSize:12,color:!newsSubFilter?cat.color:"#9B9A97",fontWeight:!newsSubFilter?600:400}}>전체</button>
+                      {cat.subs.map((sub)=>{const isSubA=newsSubFilter===sub.id;return(<button key={sub.id} onClick={()=>{setNewsSubFilter(isSubA?null:sub.id);setDrawerOpen(false);}} style={{width:"100%",textAlign:"left",padding:"5px 8px",borderRadius:4,border:"none",cursor:"pointer",background:isSubA?`${cat.color}18`:"transparent",fontFamily:"inherit",fontSize:12,color:isSubA?cat.color:"#9B9A97",fontWeight:isSubA?600:400,display:"flex",justifyContent:"space-between"}}><span>{sub.name}</span><span style={{color:"#D3D1CB"}}>{data.news.filter((n)=>(n.subCategories||[]).includes(sub.id)).length}</span></button>);})}
+                    </div>)}
+                  </div>);
+                })}
+              </div>
+            )}
+          </div>
 
-          <div style={{padding:"20px 20px"}}>
+          {/* 필터 라벨 (드로어 닫혔을 때 선택된 필터 표시) */}
+          {!drawerOpen&&newsFilterLabel&&view==="news"&&(<div className="mob" style={{padding:"6px 16px",background:"#FBFBFA",borderBottom:"1px solid #EFEFEF",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:"#9B9A97"}}>필터:</span><span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:4,background:`${selectedMainCat?.color||"#37352F"}15`,color:selectedMainCat?.color||"#37352F"}}>{newsFilterLabel}</span><button onClick={()=>{setNewsMainFilter("all");setNewsSubFilter(null);}} style={{...linkBtn,fontSize:12,color:"#B4B4B0"}}>✕</button></div>)}
+
+          <div style={{padding:"20px 20px"}} className={swipeDir==="left"?"swipe-out-left":swipeDir==="right"?"swipe-out-right":"swipe-in-right"}>
             {/* TASKS */}
             {view==="tasks"&&(<section style={{animation:"fadeUp 0.3s"}}>
               <div style={{maxWidth:800,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}><div><h1 style={{fontSize:22,fontWeight:700}}>TO DO</h1><p style={{fontSize:12,color:"#9B9A97",marginTop:1}}>진행 중 {data.tasks.filter((t)=>!t.done).length} · 완료 {data.tasks.filter((t)=>t.done).length}</p></div><button onClick={()=>openModal("task")} style={primaryBtn}>+ 추가</button></div>
