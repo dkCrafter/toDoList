@@ -138,7 +138,8 @@ function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState("loading");
-  const [view, setView] = useState("tasks");
+  const [view, setView] = useState(() => sessionStorage.getItem("dkhub_view") || "tasks");
+  const changeView = (v) => { sessionStorage.setItem("dkhub_view", v); setView(v); };
   const [taskFilter, setTaskFilter] = useState("all");
   const [taskTab, setTaskTab] = useState("active");
   const [newsMainFilter, setNewsMainFilter] = useState("all");
@@ -327,10 +328,10 @@ function App() {
     const threshold = Math.min(W * 0.08, 30);
     if (dx < -threshold && cur < NAV_ORDER.length - 1) {
       setSlideX(-W);
-      setTimeout(() => { setView(NAV_ORDER[cur+1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 180);
+      setTimeout(() => { changeView(NAV_ORDER[cur+1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 180);
     } else if (dx > threshold && cur > 0) {
       setSlideX(W);
-      setTimeout(() => { setView(NAV_ORDER[cur-1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 180);
+      setTimeout(() => { changeView(NAV_ORDER[cur-1]); setSearch(""); setSlideX(0); setIsSliding(false); }, 180);
     } else {
       setSlideX(0);
       setTimeout(() => setIsSliding(false), 180);
@@ -373,7 +374,7 @@ function App() {
           <div style={{fontSize:14,fontWeight:700,padding:"4px 8px",marginBottom:4,display:"flex",alignItems:"center",gap:6}}><span>⚡</span> DK Hub</div>
           <div style={{padding:"0 8px 12px"}}><SyncBadge status={syncStatus} /></div>
 
-          {navItems.map((n)=>(<React.Fragment key={n.id}>{n.divider&&<div style={{borderTop:"1px solid #EFEFEF",margin:"8px 8px"}} />}<button onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{...navBtn,fontSize:16,background:view===n.id?"#EFEFEF":"transparent",color:view===n.id?"#37352F":"#9B9A97",fontWeight:view===n.id?600:400}}><span style={{flex:1}}>{n.label}</span>{n.count>0&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:n.hot?"#FEE2E2":"#F0F0EE",color:n.hot?"#DC2626":"#B4B4B0",fontWeight:600}}>{n.count}</span>}</button></React.Fragment>))}
+          {navItems.map((n)=>(<React.Fragment key={n.id}>{n.divider&&<div style={{borderTop:"1px solid #EFEFEF",margin:"8px 8px"}} />}<button onClick={()=>{changeView(n.id);setSearch("");setFilterOpen(false);}} style={{...navBtn,fontSize:16,background:view===n.id?"#EFEFEF":"transparent",color:view===n.id?"#37352F":"#9B9A97",fontWeight:view===n.id?600:400}}><span style={{flex:1}}>{n.label}</span>{n.count>0&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:n.hot?"#FEE2E2":"#F0F0EE",color:n.hot?"#DC2626":"#B4B4B0",fontWeight:600}}>{n.count}</span>}</button></React.Fragment>))}
 
           {(view==="tasks"||view==="news")&&(
             <div style={{marginTop:18,padding:"0 8px"}}>
@@ -432,7 +433,7 @@ function App() {
             </button>
             <div style={{flex:1}} />
             <span className="mob"><SyncBadge status={syncStatus} /></span>
-            {reminders>0&&view!=="reminders"&&<button className="desk" onClick={()=>setView("reminders")} style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:"#DC2626",cursor:"pointer",fontFamily:"inherit"}}>⏰ {reminders}</button>}
+            {reminders>0&&view!=="reminders"&&<button className="desk" onClick={()=>changeView("reminders")} style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:"#DC2626",cursor:"pointer",fontFamily:"inherit"}}>⏰ {reminders}</button>}
           </div>
 
           {/* Mobile Drawer — 왼쪽 슬라이드 필터 패널 */}
@@ -633,7 +634,7 @@ function App() {
 
         {/* MOBILE BOTTOM TAB */}
         <nav className="mob" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:40,background:"#fff",borderTop:"1px solid #EFEFEF",display:"flex",padding:"8px 0 10px",paddingBottom:"max(10px, env(safe-area-inset-bottom))"}}>
-          {navItems.map((n)=>(<button key={n.id} onClick={()=>{setView(n.id);setSearch("");setFilterOpen(false);}} style={{flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,position:"relative",fontFamily:"inherit"}}><span style={{fontSize:13,fontWeight:view===n.id?700:500,color:view===n.id?"#37352F":"#B4B4B0"}}>{n.label}</span>{n.hot&&n.count>0&&<span style={{position:"absolute",top:-4,right:"20%",minWidth:16,height:16,borderRadius:8,background:"#DC2626",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{n.count}</span>}</button>))}
+          {navItems.map((n)=>(<button key={n.id} onClick={()=>{changeView(n.id);setSearch("");setFilterOpen(false);}} style={{flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:1,position:"relative",fontFamily:"inherit"}}><span style={{fontSize:13,fontWeight:view===n.id?700:500,color:view===n.id?"#37352F":"#B4B4B0"}}>{n.label}</span>{n.hot&&n.count>0&&<span style={{position:"absolute",top:-4,right:"20%",minWidth:16,height:16,borderRadius:8,background:"#DC2626",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{n.count}</span>}</button>))}
         </nav>
 
         {/* MODALS */}
